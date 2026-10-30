@@ -11,6 +11,12 @@ internal sealed class GateState
     /// <summary>Fingerprint of the tree the gate gave up on. It stays released until the tree changes.</summary>
     public string? ReleasedFingerprint { get; set; }
 
+    /// <summary>Fingerprint of the tree whose verification timed out. It blocks once, and is not run again until the tree changes.</summary>
+    public string? TimedOutFingerprint { get; set; }
+
+    /// <summary>The step that timed out on <see cref="TimedOutFingerprint"/>.</summary>
+    public string? TimedOutStep { get; set; }
+
     /// <summary>Consecutive failed verifications. Reset on success or when the gate releases.</summary>
     public int Attempts { get; set; }
 

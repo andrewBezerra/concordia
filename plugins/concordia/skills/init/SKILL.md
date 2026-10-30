@@ -15,6 +15,8 @@ disable-model-invocation: true
      would block every task until they are fixed or excluded.
    - `protect`: paths whose committed files must never be edited (applied migrations, generated code).
    - `lenses`: adjust the paths and signals that trigger security, performance and domain review.
+   - If `concordia.json` is already committed, Concordia blocks you from editing it: show the user the
+     change you suggest and let them make it.
 3. Run `"<Concordia helper>" gate status` and show the result.
 4. Suggest, without writing it, a short `CLAUDE.md` section with the build and test commands and
    the conventions you noticed. Only write it if the user agrees.

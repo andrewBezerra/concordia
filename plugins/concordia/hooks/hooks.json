@@ -9,7 +9,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell",
         "hooks": [
           { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/concordia-hook\" pre-tool", "timeout": 15 }
         ]
@@ -26,7 +26,7 @@
     "Stop": [
       {
         "hooks": [
-          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/concordia-hook\" stop", "timeout": 1200 }
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/concordia-hook\" stop", "timeout": 1860 }
         ]
       }
     ]

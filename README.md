@@ -51,13 +51,16 @@ anything, the whole working tree is verified, your uncommitted work included.
 
 ```text
 SessionStart ─▶ one line of context (no skills preloaded)
-Edit / Write ─▶ pre-tool: block edits to committed protected files (e.g. applied migrations)
+Edit / Write ─▶ pre-tool: block edits to committed protected files (e.g. applied migrations),
+             │            to a committed concordia.json and to the gate's state
+Shell        ─▶ pre-tool: block commands that visibly cite a committed concordia.json or the gate's state
              └▶ post-tool: remember the file (formatting happens once, at the end)
 Agent stops  ─▶ stop gate: format edited files → build → test
                   red   → errors summarized and sent back to the agent (up to 3 attempts),
                           then released until the tree changes
                   green → done; unchanged trees are never re-verified
                   tests removed or skipped → blocked first; only you can accept it
+                  timed out → blocked once, saying nothing was verified; then warns, without re-running
 Review       ─▶ review-pack: diff + stats into one file, lenses chosen by rules
                   reviewer subagents read the pack and answer in JSON with confidence scores
 ```
@@ -105,6 +108,30 @@ Windows) stdin is not a console, so use another terminal there.
 A `concordia.json` that cannot be parsed blocks the agent once with the error. If the same error is
 still there at the next stop, the gate lets it finish and warns that nothing was verified.
 
+A build or test that runs past `timeoutSeconds` blocks the agent once, saying nothing was verified and
+which step timed out. At the next stop on the same tree the gate lets it finish, warns you through
+`systemMessage`, and does not run the step again. Changing a watched file or committing runs it again.
+
+Claude Code kills the Stop hook after the `timeout` in `hooks.json`: 1860 s, which covers format, build
+and test at the default 600 s each. If you raise `timeoutSeconds`, keep three times its value below that,
+or the hook can be killed before it reports anything.
+
+### What the agent cannot change
+
+The gate's own inputs are protected from the agent's tools. `pre-tool` blocks:
+
+- `Edit`, `Write`, `MultiEdit` and `NotebookEdit` on a committed `concordia.json` or
+  `.claude/concordia.json`, and on a new root `concordia.json` that would override a committed
+  `.claude/concordia.json`. Files that are not committed stay editable, because `/concordia:init` writes them.
+- The same tools on anything under the state directory (`concordia` in the git directory).
+- `Bash` and `PowerShell` commands that cite those paths, reading ones included (`cat concordia.json`,
+  or the name in a commit message). The `Read` tool is not blocked, so the agent reads them that way.
+
+**This is a brake, not access control.** It stops an agent that reaches for the obvious edit, and tells it
+to ask you. The shell check only reads the command's text, so a script, a variable, a glob or a path
+built at run time gets past it, and so does a build step the agent wrote. An uncommitted `concordia.json`
+is not protected at all. Review changes to these files like any other change.
+
 ### Removed or skipped tests
 
 Removing or skipping a test blocks the agent, and only you can accept it. At each stop the gate
@@ -140,7 +167,8 @@ This is a text check that counts substrings. It does not read test code, and it 
   `Assume.That(`, an attribute split over several lines so that its text no longer matches,
   `[MemberData]` rows, excluding tests in the test command or the project file, and files outside `paths`.
 - **The agent can reach its own inputs:** `concordia.json` is read from the working tree, and the gate's
-  state is a file in the git directory. An agent determined to do it can edit either one. The terminal check only tests
+  state is a file in the git directory. The brake described in [What the agent cannot change](#what-the-agent-cannot-change)
+  stops the obvious edits; an agent determined to do it can still get past it. The terminal check only tests
   that stdin is a console, so on Windows an agent can also get past it, and past `gate off`, by opening a
   new console window (`Start-Process` does it).
 - **It does not run** when the gate is off, or in a repository with neither a build nor a test command.

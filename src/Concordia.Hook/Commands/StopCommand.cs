@@ -111,6 +111,13 @@ internal static class StopCommand
             return 0;
         }
 
+        if (fingerprint == state.TimedOutFingerprint)
+        {
+            store.Save(state);
+            WriteMessage(stdout, unaccepted, $"Concordia: {state.TimedOutStep} timed out on this tree, so NOTHING was verified. The gate let the session end; verify it yourself.");
+            return 0;
+        }
+
         // 4. Build, then test. Stop at the first failing step.
         var elapsed = TimeSpan.Zero;
         foreach (var (step, command) in Steps(settings))
@@ -121,9 +128,14 @@ internal static class StopCommand
             if (result.TimedOut)
             {
                 state.Attempts = 0;
+                state.TimedOutFingerprint = fingerprint;
+                state.TimedOutStep = step;
                 store.Save(state);
-                WriteMessage(stdout, unaccepted, $"Concordia: {step} timed out after {settings.CommandTimeout.TotalSeconds:0}s. Gate skipped; verify manually.");
-                return 0;
+                stderr.WriteLine(
+                    $"Concordia gate: {step} timed out after {settings.CommandTimeout.TotalSeconds:0}s, so nothing was verified. " +
+                    "Do not say the build or the tests passed: tell the user they were not verified. " +
+                    "The gate will not run them again on this same tree.");
+                return Block;
             }
 
             if (result.Succeeded) continue;
@@ -151,6 +163,8 @@ internal static class StopCommand
         state.Attempts = 0;
         state.LastGreenFingerprint = fingerprint;
         state.ReleasedFingerprint = null;
+        state.TimedOutFingerprint = null;
+        state.TimedOutStep = null;
         store.Save(state);
         WriteMessage(stdout, unaccepted, $"Concordia: build and tests green ({elapsed.TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture)}s).");
         return 0;
@@ -170,7 +184,8 @@ internal static class StopCommand
 
         state.ReportedConfigError = error;
         store.Save(state);
-        stderr.WriteLine($"Concordia gate: {path} is invalid, so build and tests did not run. Fix the file, then finish again.\n{error}");
+        var fix = repo.ExistsInHead(path) ? "It is committed, so you may not edit it: tell the user, and ask them to fix it." : "Fix the file, then finish again.";
+        stderr.WriteLine($"Concordia gate: {path} is invalid, so build and tests did not run. {fix}\n{error}");
         return Block;
     }
 
