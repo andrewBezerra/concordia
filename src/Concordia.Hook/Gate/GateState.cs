@@ -36,6 +36,12 @@ internal sealed class GateState
     /// <summary>Watched files already dirty at session start, with their hashes, per session id. They are not the session's work.</summary>
     public Dictionary<string, Dictionary<string, string>> SessionBaselines { get; set; } = new();
 
+    /// <summary>
+    /// concordia.json as it was at session start, per session id. The gate uses this text, so a commit
+    /// or an edit during the session cannot weaken what checks that session. Absent when there was no file.
+    /// </summary>
+    public Dictionary<string, string> SessionConfigs { get; set; } = new();
+
     /// <summary>Test and skip counts of the test files already dirty at session start, per session id.</summary>
     public Dictionary<string, Dictionary<string, TestCounts>> SessionTestCounts { get; set; } = new();
 
@@ -86,6 +92,7 @@ internal sealed class StateStore(Repo repo)
             var oldest = state.SessionHeads.Keys.First();
             state.SessionHeads.Remove(oldest);
             state.SessionBaselines.Remove(oldest);
+            state.SessionConfigs.Remove(oldest);
             state.SessionTestCounts.Remove(oldest);
             state.TestRemovals.Remove(oldest);
         }

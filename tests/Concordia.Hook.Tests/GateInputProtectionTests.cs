@@ -295,6 +295,48 @@ public class GateInputProtectionTests : IDisposable
         Assert.True(stop.GetProperty("timeout").GetInt32() > 3 * perStep);
     }
 
+    [Theory]
+    [InlineData("""{ "commands": { "format": "", "build": "echo ok", "test": "echo ok" }, "watch": ["**/*.cs"] }""")]
+    [InlineData("""{ "gate": { "enabled": false } }""")]
+    [InlineData("not json")]
+    public void A_config_changed_during_the_session_does_not_weaken_its_gate(string weakened)
+    {
+        CommitFile("concordia.json", """{ "commands": { "format": "", "build": "exit 1", "test": "echo ok" }, "watch": ["**/*.cs"] }""");
+        SessionStart();
+
+        // Committed, so that nothing in HEAD would tell the guard or the gate that it changed.
+        CommitFile("concordia.json", weakened);
+        Write("src/App.cs", "class App { int X; }");
+
+        var (code, _, stderr) = Stop();
+
+        Assert.Equal(StopCommand.Block, code);
+        Assert.Contains("build failed", stderr);
+    }
+
+    [Fact]
+    public void A_changed_config_is_reported_and_a_new_session_uses_it()
+    {
+        CommitFile("concordia.json", """{ "commands": { "format": "", "build": "echo ok", "test": "echo ok" }, "watch": ["**/*.cs"] }""");
+        SessionStart();
+        CommitFile("concordia.json", """{ "commands": { "format": "", "build": "exit 1", "test": "echo ok" }, "watch": ["**/*.cs"] }""");
+        Write("src/App.cs", "class App { int X; }");
+
+        var (code, stdout, _) = Stop();
+        Assert.Equal(0, code);
+        Assert.Contains("changed during this session", stdout);
+
+        Write("src/App.cs", "class App { int Y; }");
+        SessionStart("another-session");
+        Write("src/App.cs", "class App { int Z; }");
+        var (next, _, stderr) = Stop("another-session");
+        Assert.Equal(StopCommand.Block, next);
+        Assert.Contains("build failed", stderr);
+    }
+
+    private void SessionStart(string session = "test-session") =>
+        SessionStartCommand.Run(new HookInput { Cwd = _root, SessionId = session }, new StringWriter());
+
     private void UseSlowStep(string step, string watch = """["**/*.cs"]""")
     {
         var slow = OperatingSystem.IsWindows()
@@ -326,11 +368,11 @@ public class GateInputProtectionTests : IDisposable
         return (code, stderr.ToString());
     }
 
-    private (int Code, string StdOut, string StdErr) Stop()
+    private (int Code, string StdOut, string StdErr) Stop(string session = "test-session")
     {
         var stdout = new StringWriter();
         var stderr = new StringWriter();
-        var code = StopCommand.Run(new HookInput { Cwd = _root, SessionId = "test-session" }, stdout, stderr);
+        var code = StopCommand.Run(new HookInput { Cwd = _root, SessionId = session }, stdout, stderr);
         return (code, stdout.ToString(), stderr.ToString());
     }
 

@@ -133,6 +133,13 @@ to ask you. The shell check only reads the command's text, so a script, a variab
 built at run time gets past it, and so does a build step the agent wrote. An uncommitted `concordia.json`
 is not protected at all. Review changes to these files like any other change.
 
+The gate also keeps the `concordia.json` it found at session start, and that version checks the whole
+session, even if the file is edited or committed later. A stop that sees a different file says so, and
+the new version applies to a new session, so change the gate's configuration between sessions. This
+raises the bar but does not close it: the kept copy is in the state file, and a session that started with
+no `concordia.json` uses whatever appears later, because `/concordia:init` writes it during a session.
+`gate status` and `gate accept-test-removal` read the current file, not the kept copy.
+
 ### Removed or skipped tests
 
 Removing or skipping a test blocks the agent, and only you can accept it. At each stop the gate

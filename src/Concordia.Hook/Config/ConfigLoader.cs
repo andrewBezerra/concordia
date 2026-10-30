@@ -13,9 +13,11 @@ internal static class ConfigLoader
     /// Loads the effective settings for a repository. Returns null when the repository has
     /// no concordia.json and no recognizable stack: Concordia then stays out of the way.
     /// </summary>
-    public static Settings? Load(string repoRoot)
+    /// <param name="repoRoot">The repository root.</param>
+    /// <param name="pinnedConfig">Config text to use instead of the file, when the session pinned one at its start.</param>
+    public static Settings? Load(string repoRoot, string? pinnedConfig = null)
     {
-        var user = ReadUserConfig(repoRoot);
+        var user = pinnedConfig is null ? ReadUserConfig(repoRoot) : Parse(pinnedConfig);
         var stack = user?.Stack ?? DetectStack(repoRoot);
         if (user is null && stack is null) return null;
 
@@ -45,10 +47,18 @@ internal static class ConfigLoader
 
     private static ConcordiaConfig? ReadUserConfig(string repoRoot)
     {
-        var path = FindConfigPath(repoRoot);
-        if (path is null) return null;
-        return JsonSerializer.Deserialize(File.ReadAllText(path), ConcordiaJson.Default.ConcordiaConfig);
+        var text = ReadConfigText(repoRoot);
+        return text is null ? null : Parse(text);
     }
+
+    /// <summary>The raw text of the config file that wins, or null when there is none.</summary>
+    public static string? ReadConfigText(string repoRoot)
+    {
+        var path = FindConfigPath(repoRoot);
+        return path is null ? null : File.ReadAllText(path);
+    }
+
+    private static ConcordiaConfig? Parse(string text) => JsonSerializer.Deserialize(text, ConcordiaJson.Default.ConcordiaConfig);
 
     internal static ConcordiaConfig Merge(ConcordiaConfig preset, ConcordiaConfig user) => new()
     {
