@@ -158,6 +158,26 @@ internal static class StopCommand
                 return Block;
             }
 
+            if (!result.Succeeded && OutputSummarizer.FailedOnlyOnLockedFiles(result.Combined))
+            {
+                // Nothing was verified, so nothing is recorded: the next stop verifies this same tree. Not a failed attempt either.
+                state.LockedFilesReported = !state.LockedFilesReported;
+                store.Save(state);
+                if (!state.LockedFilesReported)
+                {
+                    WriteMessage(stdout, warning, $"Concordia: {step} found build outputs locked, so NOTHING was verified. The gate let the session end; verify it yourself.");
+                    return 0;
+                }
+
+                var locks = OutputSummarizer.Summarize(result.Combined, repo.Root, settings.MaxOutputLines);
+                stderr.WriteLine(
+                    $"Concordia gate: {step} could not overwrite its outputs, so nothing was verified. This is not a failure in the code: do not change it. " +
+                    "A process holds the files, usually a test run in the background. If it is yours, wait for it or stop it, then finish again. " +
+                    $"Do not stop a process you did not start, and do not say the build or the tests passed.\n{locks}");
+                return Block;
+            }
+
+            state.LockedFilesReported = false;
             if (result.Succeeded) continue;
 
             state.Attempts++;

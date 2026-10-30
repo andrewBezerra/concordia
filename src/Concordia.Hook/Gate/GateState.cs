@@ -17,6 +17,9 @@ internal sealed class GateState
     /// <summary>The step that timed out on <see cref="TimedOutFingerprint"/>.</summary>
     public string? TimedOutStep { get; set; }
 
+    /// <summary>The gate has blocked once on a locked build output. The next stop that finds a file locked passes, and clears this.</summary>
+    public bool LockedFilesReported { get; set; }
+
     /// <summary>Consecutive failed verifications. Reset on success or when the gate releases.</summary>
     public int Attempts { get; set; }
 

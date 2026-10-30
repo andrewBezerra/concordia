@@ -6,6 +6,17 @@ public class OutputSummarizerTests
 {
     private const string Root = "/repo";
 
+    [Theory]
+    [InlineData("Common.targets(5096,5): error MSB3027: Could not copy a.dll. The file is locked by: testhost [a.csproj]\nCommon.targets(5096,5): error MSB3021: Unable to copy file a.dll. [a.csproj]", true)]
+    [InlineData("Common.targets(5096,5): error MSB3027: Could not copy a.dll. [a.csproj]", true)]
+    [InlineData("Common.targets(5096,5): error MSB3021: Access to the path a.dll is denied. [a.csproj]", false)]
+    [InlineData("Common.targets(5096,5): error MSB3027: Could not copy a.dll.\nsrc/App.cs(1,1): error CS1002: ; expected", false)]
+    [InlineData("Common.targets(5096,5): warning MSB3026: Could not copy a.dll. Beginning retry 1.", false)]
+    [InlineData("  Failed App.Tests.Lock [1 ms]\n  error MSB3027: quoted in a test message", false)]
+    [InlineData("", false)]
+    public void Only_locked_output_files_are_recognized_as_such(string output, bool expected) =>
+        Assert.Equal(expected, OutputSummarizer.FailedOnlyOnLockedFiles(output));
+
     [Fact]
     public void MsBuild_errors_are_deduplicated_relativized_and_warnings_dropped()
     {

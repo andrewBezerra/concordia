@@ -70,6 +70,8 @@ Agent stops  ─▶ stop gate: format edited files → build → test
                   green → done; unchanged trees are never re-verified
                   tests removed or skipped → blocked first; only you can accept it
                   timed out → blocked once, saying nothing was verified; then warns, without re-running
+                  build outputs locked by a process → blocked once, not counted as a failure; then warns,
+                          and the next stop verifies again
 Review       ─▶ review-pack: diff + stats into one file, lenses chosen by rules
                   reviewer subagents read the pack and answer in JSON with confidence scores
 ```
