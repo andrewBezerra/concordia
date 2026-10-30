@@ -63,21 +63,23 @@ otherwise pick the smaller one. Process that is heavier than the task wastes the
 
 - Respect protected paths. If the pre-tool hook blocks an edit, create a new file (for example a new migration) or ask the user.
 - Do not disable the gate yourself. If it keeps failing for reasons outside the task (pre-existing failures), tell the user.
-- Ask before you make tests red, or finish the step first. The gate runs whenever you stop and cannot tell a question from a finished report, so a question asked while the session's own tests are red gets blocked, on purpose.
+- Ask before you make tests red, or finish the step first. The gate runs whenever you stop and cannot tell a question from a finished report, so a question asked while the session's own tests are red gets blocked like any other stop, on purpose, until the gate's attempts run out (section 5).
 - Prefer scripts and commands over reading large outputs into context.
 
 ## 5. Final report (keep it short)
 
 The gate runs after this report, so you have not seen its result for it. State only what you ran
 yourself, and never write that the gate passed. If the gate is red it blocks the report and sends
-you back with the errors.
+you back with the errors, up to its attempt limit. After `attempt N of N`, your next stop is
+released even if the tests are still red, and a command that times out skips the gate, so no block
+is not a pass. If you received `attempt N of N` and the failure remains, use the second `Gate:` form.
 
 ```
 Size: <small|medium|large>
 Changed: <files or areas, one line>
 Tests: <added N; the commands you ran and their result | not run>
 Review: <lenses run> — <N fixed, N dismissed with reason>
-Gate: runs after this report and blocks it if red
+Gate: <runs after this report and blocks it if red, up to its attempt limit; no block is not a pass | still red after N attempts, will be released — needs attention>
 ```
 
 Request: $ARGUMENTS
