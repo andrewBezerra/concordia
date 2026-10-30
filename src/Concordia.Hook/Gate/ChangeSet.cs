@@ -31,6 +31,23 @@ internal static class ChangeSet
         return files.ToList();
     }
 
+    /// <summary>Content hash per file, used to tell later edits from what was already dirty when the session started.</summary>
+    public static Dictionary<string, string> Hashes(Repo repo, IReadOnlyList<string> files) =>
+        files.ToDictionary(f => f, f => Convert.ToHexString(SHA256.HashData(Content(repo, f))), StringComparer.Ordinal);
+
+    /// <summary>
+    /// Whether the watched changes differ from the session's starting point. Without a recorded
+    /// starting point every change counts: the gate would rather verify too much than too little.
+    /// </summary>
+    public static bool DiffersFrom(Repo repo, IReadOnlyList<string> changes, Dictionary<string, string>? baseline)
+    {
+        if (baseline is null) return changes.Count > 0;
+        if (baseline.Keys.Any(f => !changes.Contains(f, StringComparer.Ordinal))) return true;
+
+        var current = Hashes(repo, changes);
+        return current.Any(c => !baseline.TryGetValue(c.Key, out var hash) || hash != c.Value);
+    }
+
     /// <summary>Hash of HEAD plus the current content of every changed file.</summary>
     public static string Fingerprint(Repo repo, string head, IReadOnlyList<string> files)
     {
@@ -39,10 +56,15 @@ internal static class ChangeSet
         foreach (var file in files)
         {
             hash.AppendData(Encoding.UTF8.GetBytes(file + "\n"));
-            var full = Path.Combine(repo.Root, file);
-            hash.AppendData(File.Exists(full) ? File.ReadAllBytes(full) : "<deleted>"u8.ToArray());
+            hash.AppendData(Content(repo, file));
         }
 
         return Convert.ToHexString(hash.GetHashAndReset());
+    }
+
+    private static byte[] Content(Repo repo, string file)
+    {
+        var full = Path.Combine(repo.Root, file);
+        return File.Exists(full) ? File.ReadAllBytes(full) : "<deleted>"u8.ToArray();
     }
 }

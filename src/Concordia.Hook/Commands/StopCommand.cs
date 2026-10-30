@@ -8,7 +8,7 @@ namespace Concordia.Hook.Commands;
 
 /// <summary>
 /// Stop hook: the verification gate. The agent may only finish when build and tests pass for
-/// the changes it made. Exit code 2 sends the summarized errors back to the agent.
+/// the changes it made in this session. Exit code 2 sends the summarized errors back to the agent.
 /// </summary>
 internal static class StopCommand
 {
@@ -56,14 +56,18 @@ internal static class StopCommand
         var sessionHead = input.SessionId is not null && state.SessionHeads.TryGetValue(input.SessionId, out var h) ? h : null;
         var committedThisSession = sessionHead is not null && sessionHead != head;
 
-        if (changes.Count == 0 && !committedThisSession)
+        var baseline = input.SessionId is not null && state.SessionBaselines.TryGetValue(input.SessionId, out var b) ? b : null;
+
+        // Dirty files the session found and left alone are not its work, so they trigger nothing.
+        // Once something does trigger the gate, the whole tree is verified: that is what must build.
+        if (!committedThisSession && !ChangeSet.DiffersFrom(repo, changes, baseline))
         {
             store.Save(state);
             return 0;
         }
 
         var fingerprint = ChangeSet.Fingerprint(repo, head, changes);
-        if (fingerprint == state.LastGreenFingerprint)
+        if (fingerprint == state.LastGreenFingerprint || fingerprint == state.ReleasedFingerprint)
         {
             store.Save(state);
             return 0;
@@ -90,6 +94,7 @@ internal static class StopCommand
             if (state.Attempts > settings.MaxAttempts)
             {
                 state.Attempts = 0;
+                state.ReleasedFingerprint = fingerprint;
                 store.Save(state);
                 WriteMessage(stdout,
                     $"Concordia: {step} still failing after {settings.MaxAttempts} fix attempts. " +
@@ -107,6 +112,7 @@ internal static class StopCommand
 
         state.Attempts = 0;
         state.LastGreenFingerprint = fingerprint;
+        state.ReleasedFingerprint = null;
         store.Save(state);
         WriteMessage(stdout, $"Concordia: build and tests green ({elapsed.TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture)}s).");
         return 0;
