@@ -13,8 +13,8 @@ unavoidable, keeps the process proportional to the task, and measures the result
 - **Risk-based review, decided by a script.** A zero-token triage reads the diff and picks the
   review lenses (security, performance, domain) from paths and code signals. The reviewer can
   escalate to one more lens when it sees something outside its own.
-- **Measured.** A public benchmark with small and large tasks and hidden acceptance tests compares
-  Claude Code alone, Concordia and Superpowers.
+- **Measured.** The repository includes a benchmark with small and large tasks and hidden acceptance
+  tests that compares Claude Code alone, Concordia and Superpowers. Results are pending.
 
 The hooks are a single native binary (C#, Native AOT): a few milliseconds per call and nothing to
 install besides Claude Code. A .NET preset ships built in; other stacks work through `concordia.json`.
@@ -46,6 +46,15 @@ The gate works in every session, with or without these commands: whenever the ag
 it must leave the build and tests green before it stops. Files that were already dirty when the
 session started do not trigger it, as long as they stay as they were. Once the session changes
 anything, the whole working tree is verified, your uncommitted work included.
+
+The gate runs after the agent's final report, so the report only states what the agent ran itself.
+A red gate blocks the report and sends the agent back, up to `gate.maxAttempts` times. The next red
+stop is released, and stays released until the tree changes. A build or test command that exceeds
+`gate.timeoutSeconds` skips the gate. Neither is a pass: no block does not mean green, and the
+gate's own message says what happened. The gate also runs when the agent stops to ask you
+something, and it cannot tell a question from a finished report. A question asked while the
+session's own tests are red is blocked like any other stop, on purpose, so the agent should ask
+before making tests red, or finish the step first.
 
 ## How it works
 
@@ -175,8 +184,8 @@ This is a text check that counts substrings. It does not read test code, and it 
   `//` lines are ignored), a skip through a custom attribute, a skip that returns early or uses
   `Assume.That(`, an attribute split over several lines so that its text no longer matches,
   `[MemberData]` rows, excluding tests in the test command or the project file, and files outside `paths`.
-- **The agent can reach its own inputs:** `concordia.json` is read from the working tree, and the gate's
-  state is a file in the git directory. The brake described in [What the agent cannot change](#what-the-agent-cannot-change)
+- **The agent can reach its own inputs:** `concordia.json` is in the working tree, and the gate's
+  state, with its kept copy of that file, is in the git directory. The brake described in [What the agent cannot change](#what-the-agent-cannot-change)
   stops the obvious edits; an agent determined to do it can still get past it. The terminal check only tests
   that stdin is a console, so on Windows an agent can also get past it, and past `gate off`, by opening a
   new console window (`Start-Process` does it).
