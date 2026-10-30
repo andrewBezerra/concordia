@@ -24,19 +24,26 @@ internal static class StopCommand
         var store = new StateStore(repo);
         var state = store.Load();
 
+        var pinned = input.SessionId is not null && state.SessionConfigs.TryGetValue(input.SessionId, out var config) ? config : null;
+        var configNotice = pinned is not null && ConfigChanged(repo.Root, pinned)
+            ? "Concordia: concordia.json changed during this session. The gate used the version from the session's start; the new one applies to a new session."
+            : null;
+
         Settings? settings;
         try
         {
-            settings = ConfigLoader.Load(repo.Root);
+            settings = ConfigLoader.Load(repo.Root, pinned);
         }
         catch (JsonException ex)
         {
             return InvalidConfig(repo, store, state, ex.Message, stdout, stderr);
         }
 
-        if (settings is null || !settings.GateEnabled) return 0;
-        if (settings.BuildCommand is null && settings.TestCommand is null) return 0;
-        if (state.Disabled) return 0;
+        if (settings is null || !settings.GateEnabled || (settings.BuildCommand is null && settings.TestCommand is null) || state.Disabled)
+        {
+            WriteMessage(stdout, configNotice, null);
+            return 0;
+        }
 
         state.ReportedConfigError = null;
 
@@ -53,7 +60,7 @@ internal static class StopCommand
         // 2. Tests removed or skipped: only the user can accept that, so this comes before everything else.
         var removal = TestGuard.Check(repo, settings, state, input.SessionId);
         var removalKey = input.SessionId ?? "";
-        string? unaccepted = null;
+        var warning = configNotice;
         if (removal.Losses.Count == 0)
         {
             // Only this session's own record: another session's removal is not this session's to clear.
@@ -81,9 +88,10 @@ internal static class StopCommand
             }
 
             // The session may stop so that it cannot loop forever, but nobody has accepted anything.
-            unaccepted =
+            var unaccepted =
                 "Concordia: test removal is UNACCEPTED. The gate stopped blocking so the session could end, which is not an acceptance. " +
                 $"Review it, then restore the tests or run \"{SessionStartCommand.HelperPath()}\" gate accept-test-removal in a terminal.\n{list}";
+            warning = warning is null ? unaccepted : $"{warning}\n{unaccepted}";
         }
 
         // 3. Decide whether there is anything to verify.
@@ -99,15 +107,23 @@ internal static class StopCommand
         if (!committedThisSession && !ChangeSet.DiffersFrom(repo, changes, baseline))
         {
             store.Save(state);
-            WriteMessage(stdout, unaccepted, null);
+            WriteMessage(stdout, warning, null);
             return 0;
         }
 
-        var fingerprint = ChangeSet.Fingerprint(repo, head, changes);
+        var fingerprint = ChangeSet.Fingerprint(repo, head, changes, pinned);
         if (fingerprint == state.LastGreenFingerprint || fingerprint == state.ReleasedFingerprint)
         {
             store.Save(state);
-            WriteMessage(stdout, unaccepted, null);
+            WriteMessage(stdout, warning, null);
+            return 0;
+        }
+
+        if (fingerprint == state.TimedOutFingerprint)
+        {
+            state.Attempts = 0;
+            store.Save(state);
+            WriteMessage(stdout, warning, TimedOutWarning(state.TimedOutStep));
             return 0;
         }
 
@@ -120,10 +136,26 @@ internal static class StopCommand
 
             if (result.TimedOut)
             {
-                state.Attempts = 0;
+                // The step may have written files, so record the tree it left: that is what the next stop will see.
+                state.TimedOutFingerprint = ChangeSet.Fingerprint(repo, repo.Head(), ChangeSet.WatchedChanges(repo, settings.Watch), pinned);
+                state.TimedOutStep = step;
+
+                // Files that keep changing between stops must not block forever, so timeouts share the failure cap.
+                state.Attempts++;
+                if (state.Attempts > settings.MaxAttempts)
+                {
+                    state.Attempts = 0;
+                    store.Save(state);
+                    WriteMessage(stdout, warning, TimedOutWarning(step));
+                    return 0;
+                }
+
                 store.Save(state);
-                WriteMessage(stdout, unaccepted, $"Concordia: {step} timed out after {settings.CommandTimeout.TotalSeconds:0}s. Gate skipped; verify manually.");
-                return 0;
+                stderr.WriteLine(
+                    $"Concordia gate: {step} timed out after {settings.CommandTimeout.TotalSeconds:0}s, so nothing was verified. " +
+                    "Do not say the build or the tests passed: tell the user they were not verified. " +
+                    "The gate will not run them again on this same tree.");
+                return Block;
             }
 
             if (result.Succeeded) continue;
@@ -134,7 +166,7 @@ internal static class StopCommand
                 state.Attempts = 0;
                 state.ReleasedFingerprint = fingerprint;
                 store.Save(state);
-                WriteMessage(stdout, unaccepted,
+                WriteMessage(stdout, warning,
                     $"Concordia: {step} still failing after {settings.MaxAttempts} fix attempts. " +
                     "Gate released so you can take over. Do not merge until it is green.");
                 return 0;
@@ -151,10 +183,28 @@ internal static class StopCommand
         state.Attempts = 0;
         state.LastGreenFingerprint = fingerprint;
         state.ReleasedFingerprint = null;
+        state.TimedOutFingerprint = null;
+        state.TimedOutStep = null;
         store.Save(state);
-        WriteMessage(stdout, unaccepted, $"Concordia: build and tests green ({elapsed.TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture)}s).");
+        WriteMessage(stdout, warning, $"Concordia: build and tests green ({elapsed.TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture)}s).");
         return 0;
     }
+
+    /// <summary>An unreadable file counts as changed: the gate has the pinned text and must not fail open over a notice.</summary>
+    private static bool ConfigChanged(string repoRoot, string pinned)
+    {
+        try
+        {
+            return pinned != (ConfigLoader.ReadConfigText(repoRoot) ?? ConfigLoader.NoConfig);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return true;
+        }
+    }
+
+    private static string TimedOutWarning(string? step) =>
+        $"Concordia: {step} timed out on this tree, so NOTHING was verified. The gate let the session end; verify it yourself.";
 
     /// <summary>An unreadable config must not look like a green gate: tell the agent once, then get out of the way.</summary>
     private static int InvalidConfig(Repo repo, StateStore store, GateState state, string error, TextWriter stdout, TextWriter stderr)
@@ -170,7 +220,8 @@ internal static class StopCommand
 
         state.ReportedConfigError = error;
         store.Save(state);
-        stderr.WriteLine($"Concordia gate: {path} is invalid, so build and tests did not run. Fix the file, then finish again.\n{error}");
+        var fix = repo.ExistsInHead(path) ? "It is committed, so you may not edit it: tell the user, and ask them to fix it." : "Fix the file, then finish again.";
+        stderr.WriteLine($"Concordia gate: {path} is invalid, so build and tests did not run. {fix}\n{error}");
         return Block;
     }
 
@@ -180,11 +231,11 @@ internal static class StopCommand
         if (settings.TestCommand is not null) yield return ("tests", settings.TestCommand);
     }
 
-    /// <summary>Claude Code reads one JSON object from stdout, so the unaccepted-removal warning shares it with the gate's message.</summary>
-    private static void WriteMessage(TextWriter stdout, string? unaccepted, string? message)
+    /// <summary>Claude Code reads one JSON object from stdout, so a warning shares it with the gate's message.</summary>
+    private static void WriteMessage(TextWriter stdout, string? warning, string? message)
     {
-        if (unaccepted is null && message is null) return;
-        WriteMessage(stdout, unaccepted is null ? message! : message is null ? unaccepted : $"{unaccepted}\n{message}");
+        if (warning is null && message is null) return;
+        WriteMessage(stdout, warning is null ? message! : message is null ? warning : $"{warning}\n{message}");
     }
 
     private static void WriteMessage(TextWriter stdout, string message) =>

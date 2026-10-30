@@ -35,6 +35,12 @@ internal static class SessionStartCommand
                 state.SessionBaselines[input.SessionId] = ChangeSet.Hashes(repo, ChangeSet.WatchedChanges(repo, settings.Watch));
             }
 
+            // Pinned once, like the head: resuming must not adopt what changed during the session.
+            if (!state.SessionConfigs.ContainsKey(input.SessionId))
+            {
+                state.SessionConfigs[input.SessionId] = ConfigLoader.ReadConfigText(repo.Root) ?? ConfigLoader.NoConfig;
+            }
+
             if (!state.SessionTestCounts.ContainsKey(input.SessionId))
             {
                 state.SessionTestCounts[input.SessionId] = TestGuard.Snapshot(repo, settings.TestGuard);

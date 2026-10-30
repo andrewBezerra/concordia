@@ -48,11 +48,12 @@ internal static class ChangeSet
         return current.Any(c => !baseline.TryGetValue(c.Key, out var hash) || hash != c.Value);
     }
 
-    /// <summary>Hash of HEAD plus the current content of every changed file.</summary>
-    public static string Fingerprint(Repo repo, string head, IReadOnlyList<string> files)
+    /// <summary>Hash of HEAD plus the current content of every changed file, and of the config that judged them, when given.</summary>
+    public static string Fingerprint(Repo repo, string head, IReadOnlyList<string> files, string? config = null)
     {
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         hash.AppendData(Encoding.UTF8.GetBytes(head + "\n"));
+        if (config is not null) hash.AppendData(Encoding.UTF8.GetBytes(config + "\n"));
         foreach (var file in files)
         {
             hash.AppendData(Encoding.UTF8.GetBytes(file + "\n"));

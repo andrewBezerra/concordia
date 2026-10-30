@@ -11,6 +11,12 @@ internal sealed class GateState
     /// <summary>Fingerprint of the tree the gate gave up on. It stays released until the tree changes.</summary>
     public string? ReleasedFingerprint { get; set; }
 
+    /// <summary>Fingerprint of the tree whose verification timed out. It blocks once, and is not run again until the tree changes.</summary>
+    public string? TimedOutFingerprint { get; set; }
+
+    /// <summary>The step that timed out on <see cref="TimedOutFingerprint"/>.</summary>
+    public string? TimedOutStep { get; set; }
+
     /// <summary>Consecutive failed verifications. Reset on success or when the gate releases.</summary>
     public int Attempts { get; set; }
 
@@ -29,6 +35,12 @@ internal sealed class GateState
 
     /// <summary>Watched files already dirty at session start, with their hashes, per session id. They are not the session's work.</summary>
     public Dictionary<string, Dictionary<string, string>> SessionBaselines { get; set; } = new();
+
+    /// <summary>
+    /// concordia.json as it was at session start, per session id. The gate uses this text, so a commit
+    /// or an edit during the session cannot weaken what checks that session. <see cref="Config.ConfigLoader.NoConfig"/> when there was no file.
+    /// </summary>
+    public Dictionary<string, string> SessionConfigs { get; set; } = new();
 
     /// <summary>Test and skip counts of the test files already dirty at session start, per session id.</summary>
     public Dictionary<string, Dictionary<string, TestCounts>> SessionTestCounts { get; set; } = new();
@@ -80,6 +92,7 @@ internal sealed class StateStore(Repo repo)
             var oldest = state.SessionHeads.Keys.First();
             state.SessionHeads.Remove(oldest);
             state.SessionBaselines.Remove(oldest);
+            state.SessionConfigs.Remove(oldest);
             state.SessionTestCounts.Remove(oldest);
             state.TestRemovals.Remove(oldest);
         }

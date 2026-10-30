@@ -6,13 +6,21 @@ internal static class ConfigLoader
 {
     public const string FileName = "concordia.json";
 
+    /// <summary>The config a session pins when the repository has no file: the preset alone.</summary>
+    public const string NoConfig = "{}";
+
+    /// <summary>Where the file may live, relative to the repository root. The first one found wins.</summary>
+    public static readonly string[] Candidates = [FileName, $".claude/{FileName}"];
+
     /// <summary>
     /// Loads the effective settings for a repository. Returns null when the repository has
     /// no concordia.json and no recognizable stack: Concordia then stays out of the way.
     /// </summary>
-    public static Settings? Load(string repoRoot)
+    /// <param name="repoRoot">The repository root.</param>
+    /// <param name="pinnedConfig">Config text to use instead of the file, when the session pinned one at its start.</param>
+    public static Settings? Load(string repoRoot, string? pinnedConfig = null)
     {
-        var user = ReadUserConfig(repoRoot);
+        var user = pinnedConfig is null ? ReadUserConfig(repoRoot) : Parse(pinnedConfig);
         var stack = user?.Stack ?? DetectStack(repoRoot);
         if (user is null && stack is null) return null;
 
@@ -23,12 +31,7 @@ internal static class ConfigLoader
 
     public static string? FindConfigPath(string repoRoot)
     {
-        foreach (var candidate in new[] { Path.Combine(repoRoot, FileName), Path.Combine(repoRoot, ".claude", FileName) })
-        {
-            if (File.Exists(candidate)) return candidate;
-        }
-
-        return null;
+        return Candidates.Select(c => Path.Combine(repoRoot, c)).FirstOrDefault(File.Exists);
     }
 
     public static string? DetectStack(string repoRoot)
@@ -47,10 +50,18 @@ internal static class ConfigLoader
 
     private static ConcordiaConfig? ReadUserConfig(string repoRoot)
     {
-        var path = FindConfigPath(repoRoot);
-        if (path is null) return null;
-        return JsonSerializer.Deserialize(File.ReadAllText(path), ConcordiaJson.Default.ConcordiaConfig);
+        var text = ReadConfigText(repoRoot);
+        return text is null ? null : Parse(text);
     }
+
+    /// <summary>The raw text of the config file that wins, or null when there is none.</summary>
+    public static string? ReadConfigText(string repoRoot)
+    {
+        var path = FindConfigPath(repoRoot);
+        return path is null ? null : File.ReadAllText(path);
+    }
+
+    private static ConcordiaConfig? Parse(string text) => JsonSerializer.Deserialize(text, ConcordiaJson.Default.ConcordiaConfig);
 
     internal static ConcordiaConfig Merge(ConcordiaConfig preset, ConcordiaConfig user) => new()
     {

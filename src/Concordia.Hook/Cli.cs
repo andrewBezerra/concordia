@@ -49,7 +49,7 @@ internal static class Cli
             concordia-hook {Version}
 
             Hook commands (read the Claude Code hook JSON from stdin):
-              pre-tool        Block edits to protected, already-committed files
+              pre-tool        Block edits to protected, already-committed files and to what the gate reads
               post-tool       Record edited files for formatting at the end
               stop            Verification gate: format, build and test before the agent may finish
               session-start   Print a one-line context note for the agent

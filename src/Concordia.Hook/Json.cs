@@ -30,6 +30,7 @@ internal sealed class ToolInput
 {
     [JsonPropertyName("file_path")] public string? FilePath { get; set; }
     [JsonPropertyName("notebook_path")] public string? NotebookPath { get; set; }
+    [JsonPropertyName("command")] public string? Command { get; set; }
 
     [JsonIgnore] public string? TargetPath => FilePath ?? NotebookPath;
 }
