@@ -7,10 +7,12 @@ namespace Concordia.Hook.Gate;
 internal sealed record TestCounts(int Tests, int Skips);
 
 /// <summary>One file that lost test markers or gained skip markers since the session started.</summary>
-internal sealed record TestLoss(string File, int TestsRemoved, int SkipsAdded, bool Deleted)
+internal sealed record TestLoss(string File, int TestsRemoved, int SkipsAdded, bool Deleted, bool Unreadable = false)
 {
     public string Describe()
     {
+        if (Unreadable) return $"{File}: could not be read, so its tests were not counted";
+
         var parts = new List<string>();
         if (Deleted) parts.Add("deleted");
         if (TestsRemoved > 0) parts.Add($"{TestsRemoved} test marker(s) removed");
@@ -37,7 +39,7 @@ internal static class TestGuard
         if (!guard.Enabled) return counts;
 
         // Not git status: it hides the old path of a staged rename, and that path must count as already gone.
-        foreach (var file in ChangedSince(repo, repo.Head()).Where(guard.Paths.Matches)) counts[file] = Count(ReadWorkingTree(repo, file), guard);
+        foreach (var file in ChangedSince(repo, repo.Head()).Where(guard.Paths.Matches)) counts[file] = Count(ReadWorkingTree(repo, file) ?? string.Empty, guard);
         return counts;
     }
 
@@ -50,11 +52,12 @@ internal static class TestGuard
         if (snapshot is not null) changed.UnionWith(snapshot.Keys);
 
         var testFiles = guard.Enabled ? changed.Where(guard.Paths.Matches).ToList() : [];
-        var deltas = testFiles.Select(file =>
+        var texts = testFiles.Select(file => (File: file, Text: ReadWorkingTree(repo, file))).ToList();
+        var deltas = texts.Where(t => t.Text is not null).Select(t =>
         {
-            var before = snapshot is not null && snapshot.TryGetValue(file, out var known) ? known : Count(ReadCommit(repo, start, file), guard);
-            var now = Count(ReadWorkingTree(repo, file), guard);
-            return (File: file, Tests: now.Tests - before.Tests, Skips: now.Skips - before.Skips);
+            var before = snapshot is not null && snapshot.TryGetValue(t.File, out var known) ? known : Count(ReadCommit(repo, start, t.File), guard);
+            var now = Count(t.Text!, guard);
+            return (t.File, Tests: now.Tests - before.Tests, Skips: now.Skips - before.Skips);
         }).ToList();
 
         var netTests = -deltas.Sum(d => d.Tests);
@@ -69,6 +72,9 @@ internal static class TestGuard
                 skipsGained ? Math.Max(d.Skips, 0) : 0,
                 !File.Exists(Path.Combine(repo.Root, d.File))))
             .ToList();
+
+        // A test file nobody can read is a test file nobody counted: that must not look like no loss.
+        losses.AddRange(texts.Where(t => t.Text is null).Select(t => new TestLoss(t.File, 0, 0, false, Unreadable: true)));
 
         // Measured from the session's start and not from HEAD, so committing an accepted tree keeps the acceptance.
         var fingerprintFiles = changed.Where(f => settings.Watch.IsEmpty || settings.Watch.Matches(f) || guard.Paths.Matches(f)).ToList();
@@ -137,9 +143,17 @@ internal static class TestGuard
         return result is { Succeeded: true } ? result.StdOut : string.Empty;
     }
 
-    private static string ReadWorkingTree(Repo repo, string file)
+    /// <summary>The file's text, empty when it is gone, or null when it exists and cannot be read.</summary>
+    private static string? ReadWorkingTree(Repo repo, string file)
     {
         var full = Path.Combine(repo.Root, file);
-        return File.Exists(full) ? File.ReadAllText(full) : string.Empty;
+        try
+        {
+            return File.Exists(full) ? File.ReadAllText(full) : string.Empty;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 }
