@@ -7,7 +7,8 @@
 //                                         [--model <model>] [--shared-config] [--keep]
 //
 // For every task x variant x run it copies benchmark/app into a fresh git repository, runs Claude Code
-// headless with the task prompt, then copies the hidden acceptance tests in and runs them.
+// headless with the task prompt, runs the agent's own test suite, puts the original visible tests back,
+// then copies the hidden acceptance tests in and runs both.
 // Results go to benchmark/results/<timestamp>/results.csv and summary.md.
 
 using System.Diagnostics;
@@ -52,7 +53,7 @@ for (var run = 1; run <= options.Runs; run++)
     Console.WriteLine($"\n== {task.Id} ({task.Size}) · {variant.Name} · run {run}");
     var result = RunOne(task, variant, run);
     rows.Add(result);
-    Console.WriteLine($"   hidden {result.HiddenPassed}/{result.HiddenTotal} · visible {result.VisiblePassed}/{result.VisibleTotal} · ${result.CostUsd:0.00} · {result.DurationSeconds:0}s · {result.Turns} turns");
+    Console.WriteLine($"   hidden {result.HiddenPassed}/{result.HiddenTotal} · visible {result.VisiblePassed}/{result.VisibleTotal} · own suite {result.OwnSuitePassed}/{result.OwnSuiteTotal} · ${result.CostUsd:0.00} · {result.DurationSeconds:0}s · {result.Turns} turns");
     Report.Write(resultsDir, rows);
 }
 
@@ -69,7 +70,7 @@ RunResult RunOne(BenchTask task, Variant variant, int run)
     Shell.Run("git", ["add", "-A"], app);
     Shell.Run("git", ["-c", "user.name=bench", "-c", "user.email=bench@localhost", "commit", "-q", "-m", "base"], app);
 
-    var prompt = variant.PrefixFor(task.Kind) + File.ReadAllText(task.PromptPath).Trim();
+    var prompt = variant.PromptFor(task.Kind, File.ReadAllText(task.PromptPath));
     var claudeArgs = new List<string> { "-p", prompt, "--output-format", "json", "--permission-mode", "bypassPermissions" };
     claudeArgs.AddRange(variant.Args);
     if (options.Model is not null) claudeArgs.AddRange(["--model", options.Model]);
@@ -86,23 +87,20 @@ RunResult RunOne(BenchTask task, Variant variant, int run)
     File.WriteAllText(Path.Combine(work, "claude-output.json"), claude.StdOut);
     var usage = ClaudeUsage.Parse(claude.StdOut);
 
-    // Hidden acceptance tests are copied in only after the agent has finished.
-    var hiddenDir = Path.Combine(app, "tests", "VetAgenda.Tests", "Hidden");
-    Paths.Copy(Path.Combine(bench, "tasks", "_shared"), hiddenDir);
-    Paths.Copy(task.HiddenDir, Path.Combine(hiddenDir, task.Id));
+    var score = Scoring.Score(bench, task, app, work);
 
-    var hidden = TestRun.Execute(app, "FullyQualifiedName~VetAgenda.Tests.Hidden", Path.Combine(work, "hidden"), task.HiddenTestCount);
-    var visible = TestRun.Execute(app, "FullyQualifiedName!~VetAgenda.Tests.Hidden", Path.Combine(work, "visible"), 0);
+    var result = new RunResult(task.Id, task.Size, task.Kind, variant.Name, run,
+        score.Hidden.Passed, score.Hidden.Total, score.Visible.Passed, score.Visible.Total, score.Hidden.BuildOk && score.Visible.BuildOk,
+        score.OwnSuite.Passed, score.OwnSuite.Total,
+        usage.CostUsd, usage.DurationMs / 1000.0, usage.Turns, usage.InputTokens, usage.OutputTokens,
+        usage.CacheReadTokens, usage.CacheWriteTokens, usage.IsError || claude.TimedOut, work);
 
-    if (!options.Keep && hidden.Passed == hidden.Total && visible.Passed == visible.Total && hidden.Total > 0)
+    if (!options.Keep && result.Success)
     {
         Paths.TryDelete(work);
     }
 
-    return new RunResult(task.Id, task.Size, task.Kind, variant.Name, run,
-        hidden.Passed, hidden.Total, visible.Passed, visible.Total, hidden.BuildOk,
-        usage.CostUsd, usage.DurationMs / 1000.0, usage.Turns, usage.InputTokens, usage.OutputTokens,
-        usage.CacheReadTokens, usage.CacheWriteTokens, usage.IsError || claude.TimedOut, work);
+    return result;
 }
 
 sealed record Options(string[]? Variants, string[]? Tasks, int Runs, string? Model, bool SharedConfig, bool Keep)
@@ -129,7 +127,15 @@ sealed record Options(string[]? Variants, string[]? Tasks, int Runs, string? Mod
 
 sealed record Variant(string Name, IReadOnlyList<string> Args, IReadOnlyDictionary<string, string> Prefix)
 {
+    /// <summary>
+    /// Headless runs have nobody to approve a plan. Every variant and task gets this sentence, in these
+    /// words, so that no setup stops early or gains from its own way of asking for approval.
+    /// </summary>
+    public const string HeadlessNote = "No human is available during this run and any plan counts as approved, so continue without waiting for approval.";
+
     public string PrefixFor(string kind) => Prefix.TryGetValue(kind, out var p) ? p : string.Empty;
+
+    public string PromptFor(string kind, string taskText) => $"{PrefixFor(kind)}{taskText.Trim()}\n\n{HeadlessNote}";
 
     public static IEnumerable<Variant> LoadAll(string path, string repoRoot)
     {
@@ -159,8 +165,7 @@ sealed record BenchTask(string Id, string Size, string Kind, string PromptPath, 
             using var doc = JsonDocument.Parse(File.ReadAllText(meta));
             var root = doc.RootElement;
             var hidden = Path.Combine(dir, "hidden");
-            var count = Directory.EnumerateFiles(hidden, "*.cs")
-                .Sum(f => File.ReadAllText(f).Split("[Fact").Length - 1 + File.ReadAllText(f).Split("[Theory").Length - 1);
+            var count = Scoring.CountTests(hidden);
             yield return new BenchTask(
                 root.GetProperty("id").GetString()!,
                 root.GetProperty("size").GetString()!,
@@ -175,6 +180,7 @@ sealed record BenchTask(string Id, string Size, string Kind, string PromptPath, 
 sealed record RunResult(
     string Task, string Size, string Kind, string Variant, int Run,
     int HiddenPassed, int HiddenTotal, int VisiblePassed, int VisibleTotal, bool BuildOk,
+    int OwnSuitePassed, int OwnSuiteTotal,
     double CostUsd, double DurationSeconds, int Turns, long InputTokens, long OutputTokens,
     long CacheReadTokens, long CacheWriteTokens, bool AgentError, string WorkDir)
 {
@@ -211,25 +217,73 @@ sealed record ClaudeUsage(double CostUsd, double DurationMs, int Turns, long Inp
     }
 }
 
+sealed record Score(TestRun OwnSuite, TestRun Hidden, TestRun Visible);
+
+static class Scoring
+{
+    private const string TestProject = "tests/VetAgenda.Tests/VetAgenda.Tests.csproj";
+
+    /// <summary>
+    /// Scores the agent's finished work. Its own suite runs first, exactly as the agent left it, and is
+    /// only reported. Then every variant is judged by the same oracle: the original visible tests and
+    /// the hidden tests, against the agent's production code.
+    /// </summary>
+    public static Score Score(string bench, BenchTask task, string app, string work)
+    {
+        var ownSuite = TestRun.Execute(app, null, null, Path.Combine(work, "own-suite"), 0);
+
+        RestoreVisibleTests(bench, app);
+
+        // Hidden acceptance tests are copied in only after the agent has finished.
+        var hiddenDir = Path.Combine(app, "tests", "VetAgenda.Tests", "Hidden");
+        Paths.Copy(Path.Combine(bench, "tasks", "_shared"), hiddenDir);
+        Paths.Copy(task.HiddenDir, Path.Combine(hiddenDir, task.Id));
+
+        // The project, not the solution: the agent's solution may still list test projects removed above.
+        var hidden = TestRun.Execute(app, TestProject, "FullyQualifiedName~VetAgenda.Tests.Hidden", Path.Combine(work, "hidden"), task.HiddenTestCount);
+        var visible = TestRun.Execute(app, TestProject, "FullyQualifiedName!~VetAgenda.Tests.Hidden", Path.Combine(work, "visible"), CountTests(Path.Combine(bench, "app", "tests")));
+        return new Score(ownSuite, hidden, visible);
+    }
+
+    /// <summary>
+    /// Replaces the whole tests folder rather than copying over it, so a test the agent added cannot
+    /// break the build when it relied on a helper it changed, and cannot count as a visible test.
+    /// </summary>
+    public static void RestoreVisibleTests(string bench, string app)
+    {
+        var tests = Path.Combine(app, "tests");
+        if (Directory.Exists(tests)) Paths.Delete(tests);
+        Paths.Copy(Path.Combine(bench, "app", "tests"), tests);
+    }
+
+    public static int CountTests(string dir) =>
+        Directory.EnumerateFiles(dir, "*.cs", SearchOption.AllDirectories)
+            .Select(File.ReadAllText)
+            .Sum(text => text.Split("[Fact").Length - 1 + text.Split("[Theory").Length - 1);
+}
+
 sealed record TestRun(int Passed, int Total, bool BuildOk)
 {
-    public static TestRun Execute(string app, string filter, string resultsDir, int expectedTotal)
+    public static TestRun Execute(string app, string? target, string? filter, string resultsDir, int expectedTotal)
     {
-        var result = Shell.Run("dotnet",
-            ["test", "--nologo", "--filter", filter, "--logger", "trx;LogFileName=results.trx", "--results-directory", resultsDir],
-            app, TimeSpan.FromMinutes(15));
+        var args = new List<string> { "test" };
+        if (target is not null) args.Add(target);
+        args.AddRange(["--nologo", "--logger", "trx;LogFilePrefix=results", "--results-directory", resultsDir]);
+        if (filter is not null) args.AddRange(["--filter", filter]);
+        var result = Shell.Run("dotnet", args, app, TimeSpan.FromMinutes(15));
 
-        var trx = Directory.Exists(resultsDir) ? Directory.EnumerateFiles(resultsDir, "*.trx", SearchOption.AllDirectories).FirstOrDefault() : null;
-        if (trx is null)
+        // One results file per test project; the agent's own suite may have more than one.
+        var trx = Directory.Exists(resultsDir) ? Directory.EnumerateFiles(resultsDir, "*.trx", SearchOption.AllDirectories).ToList() : [];
+        if (trx.Count == 0)
         {
             // No results file: the solution did not build (or no test matched).
             File.WriteAllText(resultsDir + ".log", result.StdOut + result.StdErr);
             return new TestRun(0, expectedTotal, BuildOk: false);
         }
 
-        var counters = XDocument.Load(trx).Descendants().First(e => e.Name.LocalName == "Counters");
-        int Attr(string name) => int.TryParse(counters.Attribute(name)?.Value, out var v) ? v : 0;
-        return new TestRun(Attr("passed"), Math.Max(Attr("total"), expectedTotal), BuildOk: true);
+        var counters = trx.Select(f => XDocument.Load(f).Descendants().First(e => e.Name.LocalName == "Counters")).ToList();
+        int Sum(string name) => counters.Sum(c => int.TryParse(c.Attribute(name)?.Value, out var v) ? v : 0);
+        return new TestRun(Sum("passed"), Math.Max(Sum("total"), expectedTotal), BuildOk: true);
     }
 }
 
@@ -291,12 +345,17 @@ static class Paths
         }
     }
 
+    public static void Delete(string dir)
+    {
+        foreach (var f in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories)) File.SetAttributes(f, FileAttributes.Normal);
+        Directory.Delete(dir, recursive: true);
+    }
+
     public static void TryDelete(string dir)
     {
         try
         {
-            foreach (var f in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories)) File.SetAttributes(f, FileAttributes.Normal);
-            Directory.Delete(dir, recursive: true);
+            Delete(dir);
         }
         catch (IOException)
         {
@@ -312,11 +371,12 @@ static class Report
     public static void Write(string dir, IReadOnlyList<RunResult> rows)
     {
         var inv = CultureInfo.InvariantCulture;
-        var csv = new StringBuilder("task,size,kind,variant,run,success,hidden_passed,hidden_total,visible_passed,visible_total,build_ok,cost_usd,duration_s,turns,input_tokens,output_tokens,cache_read_tokens,cache_write_tokens,agent_error,workdir\n");
+        var csv = new StringBuilder("task,size,kind,variant,run,success,hidden_passed,hidden_total,visible_passed,visible_total,build_ok,own_suite_passed,own_suite_total,cost_usd,duration_s,turns,input_tokens,output_tokens,cache_read_tokens,cache_write_tokens,agent_error,workdir\n");
         foreach (var r in rows)
         {
             csv.AppendLine(string.Join(',',
                 r.Task, r.Size, r.Kind, r.Variant, r.Run, r.Success, r.HiddenPassed, r.HiddenTotal, r.VisiblePassed, r.VisibleTotal, r.BuildOk,
+                r.OwnSuitePassed, r.OwnSuiteTotal,
                 r.CostUsd.ToString("0.0000", inv), r.DurationSeconds.ToString("0.0", inv), r.Turns, r.InputTokens, r.OutputTokens,
                 r.CacheReadTokens, r.CacheWriteTokens, r.AgentError, $"\"{r.WorkDir}\""));
         }
@@ -324,7 +384,7 @@ static class Report
         File.WriteAllText(Path.Combine(dir, "results.csv"), csv.ToString());
 
         var md = new StringBuilder("# Benchmark summary\n\n");
-        md.AppendLine("Success = every hidden acceptance test and every pre-existing test passes.\n");
+        md.AppendLine("Success = every hidden acceptance test and every original pre-existing test passes. Tests the agent added appear only in the `own_suite` columns of `results.csv` and do not affect success.\n");
         md.AppendLine("| Size | Variant | Runs | Success rate | Hidden tests passed | Mean cost (USD) | Mean time (s) | Mean turns |");
         md.AppendLine("| --- | --- | --- | --- | --- | --- | --- | --- |");
         foreach (var g in rows.GroupBy(r => (r.Size, r.Variant)).OrderBy(g => g.Key.Size).ThenBy(g => g.Key.Variant))
