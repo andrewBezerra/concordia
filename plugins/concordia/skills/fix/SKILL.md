@@ -24,14 +24,18 @@ The helper CLI path is in the session context as "Concordia helper".
    confidence ≥ 0.7.
 5. **Finish.** The gate builds and runs every test.
 
-Report:
+Report. The gate runs after it, so you have not seen its result for it. State only what you ran
+yourself, and never write that the gate passed. If the gate is red it blocks the report and sends
+you back with the errors, up to its attempt limit. After `attempt N of N`, your next stop is
+released even if the tests are still red, and a command that times out skips the gate, so no block
+is not a pass. If you received `attempt N of N` and the failure remains, use the second `Gate:` form.
 
 ```
 Bug: <one line>
 Cause: <one or two sentences>
 Fix: <files>
-Proof: <test name> fails before, passes after
-Gate: <green | released — needs attention>
+Proof: <test name> fails before, passes after, as you ran it
+Gate: <runs after this report and blocks it if red, up to its attempt limit; no block is not a pass | still red after N attempts, will be released — needs attention>
 ```
 
 Bug: $ARGUMENTS

@@ -47,6 +47,15 @@ it must leave the build and tests green before it stops. Files that were already
 session started do not trigger it, as long as they stay as they were. Once the session changes
 anything, the whole working tree is verified, your uncommitted work included.
 
+The gate runs after the agent's final report, so the report only states what the agent ran itself.
+A red gate blocks the report and sends the agent back, up to `gate.maxAttempts` times. The next red
+stop is released, and stays released until the tree changes. A build or test command that exceeds
+`gate.timeoutSeconds` skips the gate. Neither is a pass: no block does not mean green, and the
+gate's own message says what happened. The gate also runs when the agent stops to ask you
+something, and it cannot tell a question from a finished report. A question asked while the
+session's own tests are red is blocked like any other stop, on purpose, so the agent should ask
+before making tests red, or finish the step first.
+
 ## How it works
 
 ```text
