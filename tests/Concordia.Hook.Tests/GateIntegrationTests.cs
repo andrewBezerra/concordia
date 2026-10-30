@@ -8,6 +8,8 @@ public class GateIntegrationTests : IDisposable
 {
     private readonly string _root = Directory.CreateTempSubdirectory("concordia-gate-").FullName;
 
+    private const string LockedBuild = "echo 'Common.targets(5096,5): error MSB3027: Could not copy App.dll. The file is locked by: testhost' && exit 1";
+
     public GateIntegrationTests()
     {
         Git("init", "-q");
@@ -52,6 +54,64 @@ public class GateIntegrationTests : IDisposable
     public void Stop_with_failing_build_blocks_with_summarized_errors()
     {
         UseCommands(build: "echo 'src/App.cs(1,1): error CS1002: ; expected' && exit 1", test: "echo tests ok");
+        Write("src/App.cs", "class App {");
+
+        var (code, _, stderr) = Stop();
+
+        Assert.Equal(StopCommand.Block, code);
+        Assert.Contains("build failed (attempt 1 of 3)", stderr);
+        Assert.Contains("CS1002", stderr);
+    }
+
+    [Fact]
+    public void A_locked_output_file_blocks_once_without_blaming_the_code_or_spending_an_attempt()
+    {
+        UseCommands(build: LockedBuild, test: "echo tests ok");
+        Write("src/App.cs", "class App { int X; }");
+
+        var (code, _, stderr) = Stop();
+
+        Assert.Equal(StopCommand.Block, code);
+        Assert.Contains("nothing was verified", stderr);
+        Assert.Contains("not a failure in the code", stderr);
+        Assert.DoesNotContain("attempt", stderr);
+
+        // A real failure afterwards still gets every attempt.
+        UseCommands(build: "echo 'src/App.cs(1,1): error CS1002: ; expected' && exit 1", test: "echo tests ok");
+        Assert.Contains("attempt 1 of 3", Stop().StdErr);
+    }
+
+    [Fact]
+    public void A_file_still_locked_on_the_next_stop_lets_the_session_end_saying_nothing_was_verified()
+    {
+        UseCommands(build: LockedBuild, test: "echo tests ok");
+        Write("src/App.cs", "class App { int X; }");
+        Assert.Equal(StopCommand.Block, Stop().Code);
+
+        var (code, stdout, _) = Stop();
+
+        Assert.Equal(0, code);
+        Assert.Contains("NOTHING was verified", stdout);
+        Assert.DoesNotContain("green", stdout);
+    }
+
+    [Fact]
+    public void A_stop_that_passed_a_locked_file_does_not_count_as_green_once_the_file_is_free()
+    {
+        UseCommands(build: LockedBuild, test: "echo tests ok");
+        Write("src/App.cs", "class App { int X; }");
+        Assert.Equal(StopCommand.Block, Stop().Code);
+        Assert.Equal(0, Stop().Code);
+
+        UseCommands(build: "echo 'src/App.cs(1,1): error CS1002: ; expected' && exit 1", test: "echo tests ok");
+
+        Assert.Equal(StopCommand.Block, Stop().Code);
+    }
+
+    [Fact]
+    public void A_locked_file_next_to_a_compile_error_is_an_ordinary_failure()
+    {
+        UseCommands(build: "echo 'src/App.cs(1,1): error CS1002: ; expected' && " + LockedBuild, test: "echo tests ok");
         Write("src/App.cs", "class App {");
 
         var (code, _, stderr) = Stop();

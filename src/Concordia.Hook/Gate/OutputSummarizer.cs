@@ -17,6 +17,9 @@ internal static partial class OutputSummarizer
     [GeneratedRegex(@"(?:^|\s)error\s+[A-Z]{2,}\d+\s*:", RegexOptions.CultureInvariant)]
     private static partial Regex GenericError();
 
+    [GeneratedRegex(@"(?:^|\s)error\s+(?<code>[A-Z]+\d+)\s*:", RegexOptions.CultureInvariant)]
+    private static partial Regex ErrorCode();
+
     public static string Summarize(string output, string repoRoot, int maxLines)
     {
         var lines = output.Replace("\r\n", "\n").Split('\n');
@@ -98,6 +101,26 @@ internal static partial class OutputSummarizer
         var omitted = picked.Count - result.Count;
         if (omitted > 0) result.Add($"... {omitted} more line(s) omitted");
         return string.Join('\n', result);
+    }
+
+    /// <summary>
+    /// True when every error says a process holds a build output, usually a test run left in the background. That says
+    /// nothing about the code. MSB3021 alone can be a denied path, so MSB3027, which MSBuild gives after its retries, is required.
+    /// </summary>
+    public static bool FailedOnlyOnLockedFiles(string output)
+    {
+        var locked = false;
+        foreach (var raw in output.Replace("\r\n", "\n").Split('\n'))
+        {
+            if (IsFailureHeader(raw.Trim())) return false;
+
+            var code = ErrorCode().Match(raw);
+            if (!code.Success) continue;
+            if (code.Groups["code"].Value is not ("MSB3027" or "MSB3021")) return false;
+            locked |= code.Groups["code"].Value == "MSB3027";
+        }
+
+        return locked;
     }
 
     private static bool IsFailureHeader(string line) =>
