@@ -34,6 +34,11 @@ internal static class SessionStartCommand
             {
                 state.SessionBaselines[input.SessionId] = ChangeSet.Hashes(repo, ChangeSet.WatchedChanges(repo, settings.Watch));
             }
+
+            if (!state.SessionTestCounts.ContainsKey(input.SessionId))
+            {
+                state.SessionTestCounts[input.SessionId] = TestGuard.Snapshot(repo, settings.TestGuard);
+            }
         }
 
         store.Save(state);

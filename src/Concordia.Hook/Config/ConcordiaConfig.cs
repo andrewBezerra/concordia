@@ -14,6 +14,7 @@ internal sealed class ConcordiaConfig
     public Dictionary<string, LensRule>? Lenses { get; set; }
     public EscalationRules? Escalation { get; set; }
     public GateOptions? Gate { get; set; }
+    public TestGuardOptions? TestGuard { get; set; }
 }
 
 internal sealed class CommandSet
@@ -37,6 +38,18 @@ internal sealed class EscalationRules
 {
     public int? MaxDiffLines { get; set; }
     public int? MaxProjects { get; set; }
+}
+
+internal sealed class TestGuardOptions
+{
+    /// <summary>Globs: the files that are scanned for the markers below.</summary>
+    public List<string>? Paths { get; set; }
+
+    /// <summary>Plain substrings: each occurrence counts as one test. Fewer of them than at session start blocks.</summary>
+    public List<string>? Markers { get; set; }
+
+    /// <summary>Plain substrings: each occurrence counts as one skip. More of them than at session start blocks.</summary>
+    public List<string>? Skips { get; set; }
 }
 
 internal sealed class GateOptions

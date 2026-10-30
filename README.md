@@ -66,6 +66,7 @@ Agent stops  ─▶ stop gate: format edited files → build → test
                   red   → errors summarized and sent back to the agent (up to 3 attempts),
                           then released until the tree changes
                   green → done; unchanged trees are never re-verified
+                  tests removed or skipped → blocked first; only you can accept it
 Review       ─▶ review-pack: diff + stats into one file, lenses chosen by rules
                   reviewer subagents read the pack and answer in JSON with confidence scores
 ```
@@ -96,7 +97,12 @@ Every field is optional.
     "security": { "paths": ["**/Auth/**"], "signals": ["FromSqlRaw"] }
   },
   "escalation": { "maxDiffLines": 400, "maxProjects": 3 },
-  "gate": { "enabled": true, "maxAttempts": 3, "maxOutputLines": 30, "timeoutSeconds": 600 }
+  "gate": { "enabled": true, "maxAttempts": 3, "maxOutputLines": 30, "timeoutSeconds": 600 },
+  "testGuard": {                            // each list replaces the preset's; [] turns that check off
+    "paths": ["**/tests/**/*.cs"],          // the files that are scanned
+    "markers": ["[Fact]", "[Theory]"],      // each occurrence counts as one test
+    "skips": ["Skip ="]                     // each occurrence counts as one skip
+  }
 }
 ```
 
@@ -107,6 +113,51 @@ Windows) stdin is not a console, so use another terminal there.
 
 A `concordia.json` that cannot be parsed blocks the agent once with the error. If the same error is
 still there at the next stop, the gate lets it finish and warns that nothing was verified.
+
+### Removed or skipped tests
+
+Removing or skipping a test blocks the agent, and only you can accept it. At each stop the gate
+compares the session's starting point (its first HEAD plus the test files already dirty then) with
+the tree, committed changes included. It blocks with the list of files when, across all changed test
+files, there are fewer test markers or more skip markers. The .NET preset covers xUnit, NUnit and
+MSTest in C# and F#, including skips written inside the attribute (`[Test, Ignore("x")]`,
+`[TestCase(1, Ignore = "x")]`) and in the test body (`Assert.Skip(`, `Assert.SkipWhen(`,
+`Assert.SkipUnless(`, `Assert.Ignore(`, `Assert.Inconclusive(`).
+
+To accept, run `concordia-hook gate accept-test-removal` yourself. Like `gate off`, it needs an
+interactive terminal, so the agent cannot run it through its Bash tool. The acceptance covers exactly
+the current tree (the session's start plus the content of the changed watched and test files):
+committing that tree keeps it, and any other change to those files needs a new acceptance. A change
+to a file that is neither watched nor a test file does not.
+
+After `maxAttempts` blocks the session may stop, so it cannot loop forever. That is **not** an
+acceptance: every stop warns through `systemMessage` that the test removal is unaccepted, `gate status`
+says so too, and the gate blocks again as soon as the tree changes. Restoring the tests clears all of it.
+
+Each session keeps its own record, because each one measures from its own start. A session that began
+after the removal sees no loss, and its clean stop leaves the other session's acceptance or warning alone.
+An acceptance covers the sessions blocked so far; another session that started before the removal and
+stops later is blocked in its turn, and needs its own.
+
+This is a text check that counts substrings. It does not read test code, and it can be evaded:
+
+- **It compares totals, on purpose.** That is what lets a test move or a file be renamed without
+  blocking, but it also means a deleted test plus an unrelated new one does not block, and removing a
+  skip in one place hides adding one in another.
+- **It misses:** emptying a test body or weakening its assertions, `/* */` and `#if` around a test (only
+  `//` lines are ignored), a skip through a custom attribute, a skip that returns early or uses
+  `Assume.That(`, an attribute split over several lines so that its text no longer matches,
+  `[MemberData]` rows, excluding tests in the test command or the project file, and files outside `paths`.
+- **The agent can reach its own inputs:** `concordia.json` is read from the working tree, and the gate's
+  state is a file in the git directory. An agent determined to do it can edit either one. The terminal check only tests
+  that stdin is a console, so on Windows an agent can also get past it, and past `gate off`, by opening a
+  new console window (`Start-Process` does it).
+- **It does not run** when the gate is off, or in a repository with neither a build nor a test command.
+
+It also blocks when nothing is wrong, and you accept those cases the same way: `Skip =` or `Ignore =` in
+ordinary code such as a paging object under `tests/`, a test file with markers moved outside `paths`, and tests that
+disappear because the session merged or pulled a change that removed them. A deleted file under `paths`
+with no markers, such as a test helper, does not block.
 
 ## Build from source
 

@@ -76,6 +76,12 @@ internal static class ConfigLoader
             MaxOutputLines = user.Gate?.MaxOutputLines ?? preset.Gate?.MaxOutputLines,
             TimeoutSeconds = user.Gate?.TimeoutSeconds ?? preset.Gate?.TimeoutSeconds,
         },
+        TestGuard = new TestGuardOptions
+        {
+            Paths = user.TestGuard?.Paths ?? preset.TestGuard?.Paths,
+            Markers = user.TestGuard?.Markers ?? preset.TestGuard?.Markers,
+            Skips = user.TestGuard?.Skips ?? preset.TestGuard?.Skips,
+        },
     };
 
     private static Dictionary<string, LensRule> MergeLenses(Dictionary<string, LensRule>? preset, Dictionary<string, LensRule>? user)
