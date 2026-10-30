@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json;
 
 namespace VetAgenda.Tests.Hidden.L01;
 
@@ -127,5 +128,37 @@ public sealed class L01Tests : IDisposable
         Assert.Equal("Cancelled", body.GetProperty("status").GetString());
         Assert.Equal(40m, body.GetProperty("cancellationFee").GetDecimal());
         Assert.Equal(80m, body.GetProperty("price").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Cancelled_at_is_null_until_cancelled_and_comes_from_the_clock()
+    {
+        var created = await HiddenApp.Json(await _app.ScheduleAsync(1, HiddenApp.At(3, 5, 10, 0)));
+        Assert.Equal(JsonValueKind.Null, created.GetProperty("cancelledAt").ValueKind);
+
+        _app.Clock.UtcNow = HiddenApp.At(3, 3, 9, 0);
+        var body = await HiddenApp.Json(await Cancel(created.GetProperty("id").GetGuid()));
+
+        Assert.Equal(HiddenApp.At(3, 3, 9, 0), body.GetProperty("cancelledAt").GetDateTimeOffset());
+    }
+
+    [Fact]
+    public async Task Price_survives_the_round_trip_through_storage()
+    {
+        var id = await _app.ScheduleOkAsync(1, HiddenApp.At(3, 5, 10, 0), price: 99.99m);
+
+        var body = await HiddenApp.Json(await _app.Client.GetAsync($"/appointments/{id}"));
+
+        Assert.Equal(99.99m, body.GetProperty("price").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Two_application_hosts_do_not_share_data()
+    {
+        var id = await _app.ScheduleOkAsync(1, HiddenApp.At(3, 5, 10, 0));
+        using var other = new HiddenApp();
+
+        Assert.Equal(HttpStatusCode.NotFound, (await other.Client.GetAsync($"/appointments/{id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.Created, (await other.ScheduleAsync(1, HiddenApp.At(3, 5, 10, 0))).StatusCode);
     }
 }

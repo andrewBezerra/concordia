@@ -13,8 +13,8 @@ unavoidable, keeps the process proportional to the task, and measures the result
 - **Risk-based review, decided by a script.** A zero-token triage reads the diff and picks the
   review lenses (security, performance, domain) from paths and code signals. The reviewer can
   escalate to one more lens when it sees something outside its own.
-- **Measured.** A public benchmark with small and large tasks and hidden acceptance tests compares
-  Claude Code alone, Concordia and Superpowers.
+- **Measured.** The repository includes a benchmark with small and large tasks and hidden acceptance
+  tests that compares Claude Code alone, Concordia and Superpowers. Results are pending.
 
 The hooks are a single native binary (C#, Native AOT): a few milliseconds per call and nothing to
 install besides Claude Code. A .NET preset ships built in; other stacks work through `concordia.json`.
