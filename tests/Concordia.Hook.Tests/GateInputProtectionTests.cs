@@ -233,6 +233,56 @@ public class GateInputProtectionTests : IDisposable
     }
 
     [Fact]
+    public void A_timeout_that_leaves_files_behind_still_blocks_only_once()
+    {
+        // With no watch list, the runs.txt the step appends to changes the tree at every run.
+        UseSlowStep("tests", watch: "[]");
+        Write("src/App.cs", "class App { int X; }");
+
+        Assert.Equal(StopCommand.Block, Stop().Code);
+
+        var (code, stdout, _) = Stop();
+        Assert.Equal(0, code);
+        Assert.Contains("NOTHING was verified", stdout);
+        Assert.Equal(1, Runs());
+    }
+
+    [Fact]
+    public void Timeouts_on_a_tree_that_keeps_changing_stop_blocking_at_max_attempts()
+    {
+        UseSlowStep("build");
+        for (var i = 0; i < 3; i++)
+        {
+            Write("src/App.cs", $"class App {{ int X{i}; }}");
+            Assert.Equal(StopCommand.Block, Stop().Code);
+        }
+
+        Write("src/App.cs", "class App { int Last; }");
+        var (code, stdout, stderr) = Stop();
+
+        Assert.Equal(0, code);
+        Assert.Contains("build timed out", stdout);
+        Assert.Contains("NOTHING was verified", stdout);
+        Assert.Empty(stderr);
+        Assert.Equal(4, Runs());
+
+        Assert.Equal(0, Stop().Code);
+        Assert.Equal(4, Runs());
+    }
+
+    [Fact]
+    public void Letting_a_timeout_pass_gives_the_next_change_its_own_block()
+    {
+        UseSlowStep("build");
+        for (var i = 0; i < 4; i++)
+        {
+            Write("src/App.cs", $"class App {{ int X{i}; }}");
+            Assert.Equal(StopCommand.Block, Stop().Code);
+            Assert.Equal(0, Stop().Code);
+        }
+    }
+
+    [Fact]
     public void The_stop_hook_outlives_format_build_and_test_at_their_default_timeout()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
@@ -245,7 +295,7 @@ public class GateInputProtectionTests : IDisposable
         Assert.True(stop.GetProperty("timeout").GetInt32() > 3 * perStep);
     }
 
-    private void UseSlowStep(string step)
+    private void UseSlowStep(string step, string watch = """["**/*.cs"]""")
     {
         var slow = OperatingSystem.IsWindows()
             ? "echo x>> runs.txt & ping -n 6 127.0.0.1 > nul"
@@ -255,7 +305,7 @@ public class GateInputProtectionTests : IDisposable
         Write("concordia.json", $$"""
             {
               "commands": { "format": "", "build": "{{build}}", "test": "{{test}}" },
-              "watch": ["**/*.cs"],
+              "watch": {{watch}},
               "gate": { "timeoutSeconds": 1 }
             }
             """);

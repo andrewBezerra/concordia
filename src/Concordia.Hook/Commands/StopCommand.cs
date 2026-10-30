@@ -113,8 +113,9 @@ internal static class StopCommand
 
         if (fingerprint == state.TimedOutFingerprint)
         {
+            state.Attempts = 0;
             store.Save(state);
-            WriteMessage(stdout, unaccepted, $"Concordia: {state.TimedOutStep} timed out on this tree, so NOTHING was verified. The gate let the session end; verify it yourself.");
+            WriteMessage(stdout, unaccepted, TimedOutWarning(state.TimedOutStep));
             return 0;
         }
 
@@ -127,9 +128,20 @@ internal static class StopCommand
 
             if (result.TimedOut)
             {
-                state.Attempts = 0;
-                state.TimedOutFingerprint = fingerprint;
+                // The step may have written files, so record the tree it left: that is what the next stop will see.
+                state.TimedOutFingerprint = ChangeSet.Fingerprint(repo, repo.Head(), ChangeSet.WatchedChanges(repo, settings.Watch));
                 state.TimedOutStep = step;
+
+                // Files that keep changing between stops must not block forever, so timeouts share the failure cap.
+                state.Attempts++;
+                if (state.Attempts > settings.MaxAttempts)
+                {
+                    state.Attempts = 0;
+                    store.Save(state);
+                    WriteMessage(stdout, unaccepted, TimedOutWarning(step));
+                    return 0;
+                }
+
                 store.Save(state);
                 stderr.WriteLine(
                     $"Concordia gate: {step} timed out after {settings.CommandTimeout.TotalSeconds:0}s, so nothing was verified. " +
@@ -169,6 +181,9 @@ internal static class StopCommand
         WriteMessage(stdout, unaccepted, $"Concordia: build and tests green ({elapsed.TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture)}s).");
         return 0;
     }
+
+    private static string TimedOutWarning(string? step) =>
+        $"Concordia: {step} timed out on this tree, so NOTHING was verified. The gate let the session end; verify it yourself.";
 
     /// <summary>An unreadable config must not look like a green gate: tell the agent once, then get out of the way.</summary>
     private static int InvalidConfig(Repo repo, StateStore store, GateState state, string error, TextWriter stdout, TextWriter stderr)

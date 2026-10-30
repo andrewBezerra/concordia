@@ -111,6 +111,7 @@ still there at the next stop, the gate lets it finish and warns that nothing was
 A build or test that runs past `timeoutSeconds` blocks the agent once, saying nothing was verified and
 which step timed out. At the next stop on the same tree the gate lets it finish, warns you through
 `systemMessage`, and does not run the step again. Changing a watched file or committing runs it again.
+Timeouts count against `maxAttempts` like failures do, so a tree that keeps changing cannot block forever.
 
 Claude Code kills the Stop hook after the `timeout` in `hooks.json`: 1860 s, which covers format, build
 and test at the default 600 s each. If you raise `timeoutSeconds`, keep three times its value below that,
