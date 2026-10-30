@@ -21,13 +21,24 @@ internal static class StopCommand
         var repo = Repo.Find(input.WorkingDirectory);
         if (repo is null) return 0;
 
-        var settings = ConfigLoader.Load(repo.Root);
-        if (settings is null || !settings.GateEnabled) return 0;
-        if (settings.BuildCommand is null && settings.TestCommand is null) return 0;
-
         var store = new StateStore(repo);
         var state = store.Load();
+
+        Settings? settings;
+        try
+        {
+            settings = ConfigLoader.Load(repo.Root);
+        }
+        catch (JsonException ex)
+        {
+            return InvalidConfig(repo, store, state, ex.Message, stdout, stderr);
+        }
+
+        if (settings is null || !settings.GateEnabled) return 0;
+        if (settings.BuildCommand is null && settings.TestCommand is null) return 0;
         if (state.Disabled) return 0;
+
+        state.ReportedConfigError = null;
 
         // 1. Format the files edited since the last stop (once, not per edit).
         var touched = state.Touched.Where(f => File.Exists(Path.Combine(repo.Root, f))).ToList();
@@ -99,6 +110,24 @@ internal static class StopCommand
         store.Save(state);
         WriteMessage(stdout, $"Concordia: build and tests green ({elapsed.TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture)}s).");
         return 0;
+    }
+
+    /// <summary>An unreadable config must not look like a green gate: tell the agent once, then get out of the way.</summary>
+    private static int InvalidConfig(Repo repo, StateStore store, GateState state, string error, TextWriter stdout, TextWriter stderr)
+    {
+        if (state.Disabled) return 0;
+
+        var path = ConfigLoader.FindConfigPath(repo.Root) is { } found ? repo.Relative(found) : ConfigLoader.FileName;
+        if (state.ReportedConfigError == error)
+        {
+            WriteMessage(stdout, $"Concordia: {path} is still invalid. Nothing was verified.");
+            return 0;
+        }
+
+        state.ReportedConfigError = error;
+        store.Save(state);
+        stderr.WriteLine($"Concordia gate: {path} is invalid, so build and tests did not run. Fix the file, then finish again.\n{error}");
+        return Block;
     }
 
     private static IEnumerable<(string Step, string Command)> Steps(Settings settings)

@@ -97,6 +97,69 @@ public class GateIntegrationTests : IDisposable
         Assert.Equal(0, PreTool(Path.Combine(_root, "src/App.cs")).Code);
     }
 
+    [Fact]
+    public void Stop_blocks_once_on_invalid_config_then_warns()
+    {
+        Write("concordia.json", "{ invalid");
+        Write("src/App.cs", "class App { int X; }");
+
+        var (firstCode, _, firstError) = Stop();
+        var (secondCode, secondOut, _) = Stop();
+
+        Assert.Equal(StopCommand.Block, firstCode);
+        Assert.Contains("concordia.json is invalid", firstError);
+        Assert.Equal(0, secondCode);
+        Assert.Contains("Nothing was verified", secondOut);
+    }
+
+    [Fact]
+    public void Stop_blocks_again_when_the_config_breaks_in_a_new_way()
+    {
+        Write("concordia.json", "{ invalid");
+        Assert.Equal(StopCommand.Block, Stop().Code);
+
+        Write("concordia.json", """{ "commands": 1 }""");
+
+        Assert.Equal(StopCommand.Block, Stop().Code);
+    }
+
+    [Fact]
+    public void Gate_off_is_refused_without_a_terminal()
+    {
+        var stderr = new StringWriter();
+
+        var code = GateCommand.Run(["off", "agent reason"], _root, interactive: false, new StringWriter(), stderr);
+
+        Assert.Equal(1, code);
+        Assert.Contains("interactive terminal", stderr.ToString());
+        Write("src/App.cs", "class App { int X; }");
+        UseCommands(build: "exit 1", test: "exit 0");
+        Assert.Equal(StopCommand.Block, Stop().Code);
+    }
+
+    [Fact]
+    public void Gate_off_works_from_a_terminal()
+    {
+        Assert.Equal(0, GateCommand.Run(["off", "user reason"], _root, interactive: true, new StringWriter(), new StringWriter()));
+
+        Write("src/App.cs", "class App { int X; }");
+        UseCommands(build: "exit 1", test: "exit 0");
+        Assert.Equal(0, Stop().Code);
+    }
+
+    [Fact]
+    public void ReviewPack_includes_untracked_file_with_non_ascii_name()
+    {
+        Write("src/Validação.cs", "class V {}");
+        var stdout = new StringWriter();
+
+        var code = ReviewPackCommand.Run([], _root, stdout, new StringWriter());
+
+        Assert.Equal(0, code);
+        Assert.Contains("\"files\": 1", stdout.ToString());
+        Assert.Contains("src/Validação.cs", File.ReadAllText(Path.Combine(_root, ".git", "concordia", "review-pack.md")));
+    }
+
     private (int Code, string StdOut, string StdErr) Stop()
     {
         var stdout = new StringWriter();

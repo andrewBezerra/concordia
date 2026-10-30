@@ -41,8 +41,8 @@ internal static class ReviewPackCommand
 
         // Untracked files are invisible to git diff; append them as new-file diffs.
         var untrackedDiff = new StringBuilder();
-        var untracked = repo.Git("ls-files", "--others", "--exclude-standard").StdOut
-            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var untracked = repo.Git("ls-files", "--others", "--exclude-standard", "-z").StdOut
+            .Split('\0', StringSplitOptions.RemoveEmptyEntries);
         foreach (var file in untracked)
         {
             var full = Path.Combine(repo.Root, file);

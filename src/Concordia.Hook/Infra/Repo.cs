@@ -41,7 +41,9 @@ internal sealed record Repo(string Root, string GitDir)
     public string Relative(string path) =>
         GlobSet.Normalize(Path.GetRelativePath(Root, Path.GetFullPath(path, Root)));
 
-    public ProcessResult Git(params string[] arguments) => ProcessRunner.Run("git", arguments, Root, GitTimeout);
+    /// <summary>Runs git with non-ASCII paths left as they are, so its output can be matched against real file names.</summary>
+    public ProcessResult Git(params string[] arguments) =>
+        ProcessRunner.Run("git", ["-c", "core.quotePath=false", .. arguments], Root, GitTimeout);
 
     public string Head()
     {
