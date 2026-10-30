@@ -7,7 +7,7 @@ namespace Concordia.Hook.Commands;
 /// <summary><c>gate status|on|off [reason]</c>: inspect or toggle the verification gate for this repository.</summary>
 internal static class GateCommand
 {
-    public static int Run(string[] args, string cwd, TextWriter stdout, TextWriter stderr)
+    public static int Run(string[] args, string cwd, bool interactive, TextWriter stdout, TextWriter stderr)
     {
         var repo = Repo.Find(cwd);
         if (repo is null)
@@ -21,6 +21,15 @@ internal static class GateCommand
         switch (action)
         {
             case "off":
+                // The agent's Bash tool has no terminal, so this keeps the gate out of the agent's reach.
+                if (!interactive)
+                {
+                    stderr.WriteLine(
+                        "concordia-hook gate off: refused, it needs an interactive terminal. " +
+                        "Only the user can turn the gate off: ask them, and tell them why.");
+                    return 1;
+                }
+
                 var reason = args.Length > 1 ? string.Join(' ', args[1..]) : "turned off manually";
                 store.Update(s =>
                 {

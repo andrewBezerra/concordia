@@ -15,6 +15,9 @@ internal sealed class GateState
 
     public string? DisabledReason { get; set; }
 
+    /// <summary>Last concordia.json parse error sent to the agent, so the same error blocks only once.</summary>
+    public string? ReportedConfigError { get; set; }
+
     /// <summary>Watched files edited since the last stop; formatted before verification.</summary>
     public List<string> Touched { get; set; } = [];
 

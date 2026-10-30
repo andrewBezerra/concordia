@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 
 namespace Concordia.Hook.Infra;
 
@@ -14,7 +15,13 @@ internal static class ProcessRunner
     /// <summary>Runs an executable with an exact argument list (no shell).</summary>
     public static ProcessResult Run(string fileName, IEnumerable<string> arguments, string workingDirectory, TimeSpan timeout)
     {
-        var info = new ProcessStartInfo(fileName) { WorkingDirectory = workingDirectory };
+        // Git writes UTF-8 whatever the console code page is; decoding it otherwise breaks non-ASCII paths.
+        var info = new ProcessStartInfo(fileName)
+        {
+            WorkingDirectory = workingDirectory,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
+        };
         foreach (var argument in arguments) info.ArgumentList.Add(argument);
         return Execute(info, timeout);
     }
@@ -48,6 +55,9 @@ internal static class ProcessRunner
         info.RedirectStandardError = true;
         info.Environment["DOTNET_NOLOGO"] = "1";
         info.Environment["MSBUILDTERMINALLOGGER"] = "off";
+
+        // OutputSummarizer parses English output; a localized SDK would hide every test failure from it.
+        info.Environment["DOTNET_CLI_UI_LANGUAGE"] = "en";
 
         var stopwatch = Stopwatch.StartNew();
         using var process = Process.Start(info) ?? throw new InvalidOperationException($"Could not start '{info.FileName}'.");

@@ -19,7 +19,7 @@ internal static class Cli
                 "stop" => StopCommand.Run(HookInput.Read(stdin), stdout, stderr),
                 "session-start" => SessionStartCommand.Run(HookInput.Read(stdin), stdout),
                 "review-pack" => ReviewPackCommand.Run(rest, Directory.GetCurrentDirectory(), stdout, stderr),
-                "gate" => GateCommand.Run(rest, Directory.GetCurrentDirectory(), stdout, stderr),
+                "gate" => GateCommand.Run(rest, Directory.GetCurrentDirectory(), !Console.IsInputRedirected, stdout, stderr),
                 "init" => InitCommand.Run(rest, Directory.GetCurrentDirectory(), stdout, stderr),
                 "version" or "--version" => PrintVersion(stdout),
                 _ => PrintHelp(stdout),

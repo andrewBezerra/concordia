@@ -3,7 +3,7 @@
   "commands": {
     "format": "dotnet format --include {files} --verbosity quiet",
     "build": "dotnet build --nologo -v q -clp:ErrorsOnly",
-    "test": "dotnet test --nologo -v q --no-build"
+    "test": "dotnet test --nologo -v q --no-build --logger \"console;verbosity=minimal\""
   },
   "watch": [
     "**/*.cs",

@@ -76,7 +76,7 @@ Every field is optional.
   "commands": {
     "format": "dotnet format --include {files} --verbosity quiet", // "" disables a step
     "build": "dotnet build App.slnx --nologo -v q -clp:ErrorsOnly",
-    "test": "dotnet test App.slnx --nologo -v q --no-build"
+    "test": "dotnet test App.slnx --nologo -v q --no-build --logger \"console;verbosity=minimal\""
   },
   "watch": ["**/*.cs", "**/*.csproj"],      // changes that require verification
   "protect": ["**/Migrations/**"],          // committed files here cannot be edited
@@ -88,8 +88,13 @@ Every field is optional.
 }
 ```
 
-Turn the gate off for a moment with `CONCORDIA_GATE=off`, or per repository with
-`concordia-hook gate off "reason"` (and `gate on` to restore it).
+Turn the gate off for a moment by starting Claude Code with `CONCORDIA_GATE=off`, or per repository
+with `concordia-hook gate off "reason"` (and `gate on` to restore it). `gate off` only works from an
+interactive terminal, so the agent cannot run it through its Bash tool. Under mintty (Git Bash on
+Windows) stdin is not a console, so use another terminal there.
+
+A `concordia.json` that cannot be parsed blocks the agent once with the error. If the same error is
+still there at the next stop, the gate lets it finish and warns that nothing was verified.
 
 ## Build from source
 
