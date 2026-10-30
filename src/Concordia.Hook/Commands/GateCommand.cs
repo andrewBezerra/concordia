@@ -62,7 +62,7 @@ internal static class GateCommand
                 stdout.WriteLine($"Build: {settings?.BuildCommand ?? "-"}");
                 stdout.WriteLine($"Test: {settings?.TestCommand ?? "-"}");
                 stdout.WriteLine($"Failed attempts in a row: {state.Attempts}");
-                if (state.TestRemovalSession is not null) stdout.WriteLine("Test removal: unaccepted");
+                if (settings is not null && TestGuard.Unaccepted(repo, settings, state).Count > 0) stdout.WriteLine("Test removal: unaccepted");
                 return 0;
 
             default:
@@ -85,28 +85,23 @@ internal static class GateCommand
 
         var state = store.Load();
         var settings = ConfigLoader.Load(repo.Root);
-        if (state.TestRemovalSession is null || settings is null)
+        var waiting = settings is null ? [] : TestGuard.Unaccepted(repo, settings, state);
+        if (waiting.Count == 0)
         {
             stdout.WriteLine("Concordia gate: no test removal is waiting for acceptance.");
             return 0;
         }
 
-        var session = state.TestRemovalSession.Length == 0 ? null : state.TestRemovalSession;
-        var report = TestGuard.Check(repo, settings, state, session);
-        if (report.Losses.Count == 0)
+        foreach (var (removal, report) in waiting)
         {
-            state.TestRemovalSession = null;
-            store.Save(state);
-            stdout.WriteLine("Concordia gate: the tests are back, so there is nothing to accept.");
-            return 0;
+            removal.Accepted = report.Fingerprint;
+            removal.Released = null;
+            removal.Attempts = 0;
         }
 
-        state.AcceptedTestRemoval = report.Fingerprint;
-        state.ReleasedTestRemoval = null;
-        state.TestRemovalSession = null;
-        state.TestRemovalAttempts = 0;
         store.Save(state);
-        stdout.WriteLine($"Concordia gate: test removal accepted for the tree as it is now. Changing the tree needs a new acceptance.\n{TestGuard.Describe(report, settings.MaxOutputLines)}");
+        var lists = waiting.Select(w => TestGuard.Describe(w.Report, settings!.MaxOutputLines)).Distinct();
+        stdout.WriteLine($"Concordia gate: test removal accepted for the tree as it is now. Changing the tree needs a new acceptance.\n{string.Join('\n', lists)}");
         return 0;
     }
 }

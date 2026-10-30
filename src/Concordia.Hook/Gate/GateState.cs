@@ -33,17 +33,25 @@ internal sealed class GateState
     /// <summary>Test and skip counts of the test files already dirty at session start, per session id.</summary>
     public Dictionary<string, Dictionary<string, TestCounts>> SessionTestCounts { get; set; } = new();
 
-    /// <summary>Session whose test removal is waiting for the user ("" when the hook got no session id); null when none is.</summary>
-    public string? TestRemovalSession { get; set; }
+    /// <summary>
+    /// Test removals the gate has blocked on, per session id ("" when the hook got no session id).
+    /// Per session because each one measures from its own start: a session that began after the
+    /// removal sees no loss, and that says nothing about the removal another session reported.
+    /// </summary>
+    public Dictionary<string, TestRemovalState> TestRemovals { get; set; } = new();
+}
 
+/// <summary>Where one session's test removal stands with the user.</summary>
+internal sealed class TestRemovalState
+{
     /// <summary>Fingerprint of the tree whose test removal the user accepted from a terminal.</summary>
-    public string? AcceptedTestRemoval { get; set; }
+    public string? Accepted { get; set; }
 
     /// <summary>Fingerprint of the tree the gate stopped blocking on after maxAttempts. This is not an acceptance.</summary>
-    public string? ReleasedTestRemoval { get; set; }
+    public string? Released { get; set; }
 
-    /// <summary>Consecutive stops blocked for test removal. Separate from <see cref="Attempts"/>, which counts red builds.</summary>
-    public int TestRemovalAttempts { get; set; }
+    /// <summary>Consecutive stops blocked for test removal. Separate from <see cref="GateState.Attempts"/>, which counts red builds.</summary>
+    public int Attempts { get; set; }
 }
 
 internal sealed class StateStore(Repo repo)
@@ -73,6 +81,7 @@ internal sealed class StateStore(Repo repo)
             state.SessionHeads.Remove(oldest);
             state.SessionBaselines.Remove(oldest);
             state.SessionTestCounts.Remove(oldest);
+            state.TestRemovals.Remove(oldest);
         }
 
         Directory.CreateDirectory(repo.StateDir);

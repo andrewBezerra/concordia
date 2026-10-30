@@ -75,6 +75,19 @@ internal static class TestGuard
         return new TestRemovalReport(losses, Math.Max(netTests, 0), Math.Max(netSkips, 0), ChangeSet.Fingerprint(repo, start, fingerprintFiles));
     }
 
+    /// <summary>The removals the gate blocked on that still stand and that nobody has accepted, as the tree is now.</summary>
+    public static List<(TestRemovalState State, TestRemovalReport Report)> Unaccepted(Repo repo, Settings settings, GateState state)
+    {
+        var waiting = new List<(TestRemovalState, TestRemovalReport)>();
+        foreach (var (session, removal) in state.TestRemovals)
+        {
+            var report = Check(repo, settings, state, session.Length == 0 ? null : session);
+            if (report.Losses.Count > 0 && report.Fingerprint != removal.Accepted) waiting.Add((removal, report));
+        }
+
+        return waiting;
+    }
+
     /// <summary>The report's lines, cut to the configured limit because they go into the model context.</summary>
     public static string Describe(TestRemovalReport report, int maxLines)
     {

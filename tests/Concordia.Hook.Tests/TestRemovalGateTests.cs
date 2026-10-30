@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Concordia.Hook.Commands;
 using Concordia.Hook.Config;
+using Concordia.Hook.Gate;
 using Concordia.Hook.Infra;
 
 namespace Concordia.Hook.Tests;
@@ -293,6 +294,96 @@ public class TestRemovalGateTests : IDisposable
     }
 
     [Fact]
+    public void A_later_sessions_clean_stop_keeps_the_acceptance()
+    {
+        SessionStart();
+        Write("tests/AppTests.cs", OneTestLess);
+        Assert.Equal(StopCommand.Block, Stop().Code);
+        Assert.Equal(0, GateCommand.Run(["accept-test-removal"], _root, interactive: true, new StringWriter(), new StringWriter()));
+        Assert.Equal(0, Stop().Code);
+
+        SessionStart("later-session");
+        Assert.Equal(0, Stop("later-session").Code);
+
+        Assert.Equal(0, Stop().Code);
+    }
+
+    [Fact]
+    public void A_later_sessions_clean_stop_keeps_the_unaccepted_warning_and_what_can_be_accepted()
+    {
+        SessionStart();
+        Write("tests/AppTests.cs", OneTestLess);
+        for (var attempt = 1; attempt <= 3; attempt++) Assert.Equal(StopCommand.Block, Stop().Code);
+        Assert.Contains("UNACCEPTED", SystemMessage(Stop().StdOut));
+
+        SessionStart("later-session");
+        Assert.Equal(0, Stop("later-session").Code);
+
+        Assert.Contains("Test removal: unaccepted", Status());
+        var accepted = new StringWriter();
+        Assert.Equal(0, GateCommand.Run(["accept-test-removal"], _root, interactive: true, accepted, new StringWriter()));
+        Assert.Contains("tests/AppTests.cs: 2 test marker(s) removed", accepted.ToString());
+        Assert.DoesNotContain("Test removal: unaccepted", Status());
+        Assert.DoesNotContain("UNACCEPTED", Stop().StdOut);
+    }
+
+    [Fact]
+    public void A_later_sessions_clean_stop_does_not_restart_the_attempts()
+    {
+        SessionStart();
+        Write("tests/AppTests.cs", OneTestLess);
+        Assert.Contains("attempt 1 of 3", Stop().StdErr);
+
+        SessionStart("later-session");
+        Assert.Equal(0, Stop("later-session").Code);
+
+        Assert.Contains("attempt 2 of 3", Stop().StdErr);
+    }
+
+    [Fact]
+    public void Status_stops_reporting_a_removal_restored_after_its_session_ended()
+    {
+        SessionStart();
+        Write("tests/AppTests.cs", OneTestLess);
+        Assert.Equal(StopCommand.Block, Stop().Code);
+        Assert.Contains("Test removal: unaccepted", Status());
+
+        Write("tests/AppTests.cs", TwoTests);
+
+        Assert.DoesNotContain("Test removal: unaccepted", Status());
+    }
+
+    [Theory]
+    [InlineData("[Test]", """[Test, Ignore("x")]""")]
+    [InlineData("[Test]", """[Test, Explicit("x")]""")]
+    [InlineData("[Test]", "[Test, Explicit]")]
+    [InlineData("[TestMethod, Timeout(1)]", "[TestMethod, Ignore, Timeout(1)]")]
+    [InlineData("[TestCase(1)]", """[TestCase(1, Ignore = "x")]""")]
+    [InlineData("[TestCase(1)]", """[TestCase(1, IgnoreReason = "x")]""")]
+    [InlineData("[TestCase(1)]", "[TestCase(1, Explicit = true)]")]
+    [InlineData("[Test] void X() { }", """[Test] void X() { Assert.Ignore("x"); }""")]
+    [InlineData("[TestMethod] void X() { }", """[TestMethod] void X() { Assert.Inconclusive("x"); }""")]
+    [InlineData("[Fact] void X() { }", """[Fact] void X() { Assert.SkipWhen(true, "x"); }""")]
+    [InlineData("[Fact] void X() { }", """[Fact] void X() { Assert.SkipUnless(false, "x"); }""")]
+    public void Dotnet_preset_counts_each_native_skip_once(string before, string after)
+    {
+        var dir = Directory.CreateTempSubdirectory("concordia-preset-").FullName;
+        try
+        {
+            File.WriteAllText(System.IO.Path.Combine(dir, "App.slnx"), "<Solution />");
+            var guard = ConfigLoader.Load(dir)!.TestGuard;
+
+            var skipped = TestGuard.Count(after, guard);
+
+            Assert.Equal(TestGuard.Count(before, guard).Skips + 1, skipped.Skips);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Released_removal_still_runs_the_build_and_shares_one_json_message()
     {
         SessionStart();
@@ -400,15 +491,22 @@ public class TestRemovalGateTests : IDisposable
         return json.RootElement.GetProperty("systemMessage").GetString()!;
     }
 
-    private void SessionStart() =>
-        SessionStartCommand.Run(new HookInput { Cwd = _root, SessionId = "test-session" }, new StringWriter());
+    private void SessionStart(string session = "test-session") =>
+        SessionStartCommand.Run(new HookInput { Cwd = _root, SessionId = session }, new StringWriter());
 
-    private (int Code, string StdOut, string StdErr) Stop()
+    private (int Code, string StdOut, string StdErr) Stop(string session = "test-session")
     {
         var stdout = new StringWriter();
         var stderr = new StringWriter();
-        var code = StopCommand.Run(new HookInput { Cwd = _root, SessionId = "test-session" }, stdout, stderr);
+        var code = StopCommand.Run(new HookInput { Cwd = _root, SessionId = session }, stdout, stderr);
         return (code, stdout.ToString(), stderr.ToString());
+    }
+
+    private string Status()
+    {
+        var stdout = new StringWriter();
+        GateCommand.Run(["status"], _root, interactive: false, stdout, new StringWriter());
+        return stdout.ToString();
     }
 
     private void UseConfig(string build) =>

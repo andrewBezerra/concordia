@@ -111,7 +111,9 @@ Removing or skipping a test blocks the agent, and only you can accept it. At eac
 compares the session's starting point (its first HEAD plus the test files already dirty then) with
 the tree, committed changes included. It blocks with the list of files when, across all changed test
 files, there are fewer test markers or more skip markers. The .NET preset covers xUnit, NUnit and
-MSTest in C# and F#.
+MSTest in C# and F#, including skips written inside the attribute (`[Test, Ignore("x")]`,
+`[TestCase(1, Ignore = "x")]`) and in the test body (`Assert.Skip(`, `Assert.SkipWhen(`,
+`Assert.SkipUnless(`, `Assert.Ignore(`, `Assert.Inconclusive(`).
 
 To accept, run `concordia-hook gate accept-test-removal` yourself. Like `gate off`, it needs an
 interactive terminal, so the agent cannot run it through its Bash tool. The acceptance covers exactly
@@ -123,22 +125,28 @@ After `maxAttempts` blocks the session may stop, so it cannot loop forever. That
 acceptance: every stop warns through `systemMessage` that the test removal is unaccepted, `gate status`
 says so too, and the gate blocks again as soon as the tree changes. Restoring the tests clears all of it.
 
+Each session keeps its own record, because each one measures from its own start. A session that began
+after the removal sees no loss, and its clean stop leaves the other session's acceptance or warning alone.
+An acceptance covers the sessions blocked so far; another session that started before the removal and
+stops later is blocked in its turn, and needs its own.
+
 This is a text check that counts substrings. It does not read test code, and it can be evaded:
 
 - **It compares totals, on purpose.** That is what lets a test move or a file be renamed without
   blocking, but it also means a deleted test plus an unrelated new one does not block, and removing a
   skip in one place hides adding one in another.
 - **It misses:** emptying a test body or weakening its assertions, `/* */` and `#if` around a test (only
-  `//` lines are ignored), a skip through a custom attribute, `[MemberData]` rows, excluding tests in
-  the test command or the project file, and files outside `paths`.
+  `//` lines are ignored), a skip through a custom attribute, a skip that returns early or uses
+  `Assume.That(`, an attribute split over several lines so that its text no longer matches,
+  `[MemberData]` rows, excluding tests in the test command or the project file, and files outside `paths`.
 - **The agent can reach its own inputs:** `concordia.json` is read from the working tree, and the gate's
   state is a file in the git directory. An agent determined to do it can edit either one. The terminal check only tests
   that stdin is a console, so on Windows an agent can also get past it, and past `gate off`, by opening a
   new console window (`Start-Process` does it).
 - **It does not run** when the gate is off, or in a repository with neither a build nor a test command.
 
-It also blocks when nothing is wrong, and you accept those cases the same way: `Skip =` in ordinary code
-such as a paging object under `tests/`, a test file with markers moved outside `paths`, and tests that
+It also blocks when nothing is wrong, and you accept those cases the same way: `Skip =` or `Ignore =` in
+ordinary code such as a paging object under `tests/`, a test file with markers moved outside `paths`, and tests that
 disappear because the session merged or pulled a change that removed them. A deleted file under `paths`
 with no markers, such as a test helper, does not block.
 

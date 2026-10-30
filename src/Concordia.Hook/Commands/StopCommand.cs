@@ -52,33 +52,32 @@ internal static class StopCommand
 
         // 2. Tests removed or skipped: only the user can accept that, so this comes before everything else.
         var removal = TestGuard.Check(repo, settings, state, input.SessionId);
+        var removalKey = input.SessionId ?? "";
         string? unaccepted = null;
         if (removal.Losses.Count == 0)
         {
-            state.TestRemovalSession = null;
-            state.AcceptedTestRemoval = null;
-            state.ReleasedTestRemoval = null;
-            state.TestRemovalAttempts = 0;
+            // Only this session's own record: another session's removal is not this session's to clear.
+            state.TestRemovals.Remove(removalKey);
         }
-        else if (removal.Fingerprint != state.AcceptedTestRemoval)
+        else if (!state.TestRemovals.TryGetValue(removalKey, out var pending) || removal.Fingerprint != pending.Accepted)
         {
-            state.TestRemovalSession = input.SessionId ?? "";
+            pending ??= state.TestRemovals[removalKey] = new TestRemovalState();
             var list = TestGuard.Describe(removal, settings.MaxOutputLines);
-            if (removal.Fingerprint != state.ReleasedTestRemoval)
+            if (removal.Fingerprint != pending.Released)
             {
-                state.TestRemovalAttempts++;
-                if (state.TestRemovalAttempts <= settings.MaxAttempts)
+                pending.Attempts++;
+                if (pending.Attempts <= settings.MaxAttempts)
                 {
                     store.Save(state);
                     stderr.WriteLine(
-                        $"Concordia gate: tests were removed or skipped in this session (attempt {state.TestRemovalAttempts} of {settings.MaxAttempts}). " +
+                        $"Concordia gate: tests were removed or skipped in this session (attempt {pending.Attempts} of {settings.MaxAttempts}). " +
                         "Restore them. If removing them is right, only the user can accept it: stop and ask them to run " +
                         $"\"{SessionStartCommand.HelperPath()}\" gate accept-test-removal in a terminal, and tell them why.\n{list}");
                     return Block;
                 }
 
-                state.TestRemovalAttempts = 0;
-                state.ReleasedTestRemoval = removal.Fingerprint;
+                pending.Attempts = 0;
+                pending.Released = removal.Fingerprint;
             }
 
             // The session may stop so that it cannot loop forever, but nobody has accepted anything.
