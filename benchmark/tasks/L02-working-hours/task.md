@@ -21,7 +21,8 @@ another.
   returns `200` with the updated veterinarian.
 - The request must carry the header `X-Admin-Key` with the value of the configuration setting
   `Admin:ApiKey`. Add that setting to a new `src/VetAgenda.Api/appsettings.json`, with the value
-  `bench-admin-key`. Compare the keys in constant time, and never log them.
+  `bench-admin-key`. Read the key from configuration rather than repeating it in code, compare the
+  keys in constant time with `CryptographicOperations.FixedTimeEquals`, and never log them.
 - Checks run in this order: missing or wrong key returns `401` with code `auth.invalid_key`; unknown
   veterinarian returns `404`; invalid hours return `400` with code `working_hours.invalid`.
 - Hours are invalid when `day` is not an English day name, `open` or `close` is not a valid `HH:mm`

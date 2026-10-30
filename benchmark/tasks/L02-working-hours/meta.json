@@ -1,1 +1,12 @@
-{ "id": "L02", "size": "large", "kind": "feature", "title": "Protected working hours and availability" }
+{
+  "id": "L02",
+  "size": "large",
+  "kind": "feature",
+  "title": "Protected working hours and availability",
+  "sourceChecks": [
+    { "name": "compares the keys with CryptographicOperations.FixedTimeEquals", "files": "*.cs", "pattern": "CryptographicOperations\\.FixedTimeEquals" },
+    { "name": "reads the key from the Admin configuration", "files": "*.cs", "pattern": "\"Admin:ApiKey\"|\"Admin\"" },
+    { "name": "does not hardcode the key in code", "files": "*.cs", "pattern": "bench-admin-key", "absent": true },
+    { "name": "sets the key in appsettings.json", "files": "appsettings.json", "pattern": "bench-admin-key" }
+  ]
+}

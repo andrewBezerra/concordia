@@ -1,1 +1,13 @@
-{ "id": "L01", "size": "large", "kind": "feature", "title": "SQLite persistence and cancellation with late-cancellation fee" }
+{
+  "id": "L01",
+  "size": "large",
+  "kind": "feature",
+  "title": "SQLite persistence and cancellation with late-cancellation fee",
+  "sourceChecks": [
+    { "name": "references the Microsoft.EntityFrameworkCore.Sqlite package", "files": "*.csproj", "pattern": "Microsoft\\.EntityFrameworkCore\\.Sqlite" },
+    { "name": "has an EF Core DbContext", "files": "*.cs", "pattern": ":\\s*DbContext\\b" },
+    { "name": "configures EF Core with UseSqlite", "files": "*.cs", "pattern": "\\.UseSqlite\\(" },
+    { "name": "uses an in-memory SQLite database", "files": "*.cs", "pattern": ":memory:" },
+    { "name": "names the cancellation_fee column", "files": "*.cs", "pattern": "cancellation_fee|UseSnakeCaseNamingConvention" }
+  ]
+}

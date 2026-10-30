@@ -14,7 +14,8 @@ Concordia and with Superpowers on the same tasks, small and large.
    `claude -p` with the prompt. Then it runs the agent's own test suite as the agent left it, replaces
    the `tests/` folder with the original one from `app/`, copies the hidden tests in, and runs the
    hidden and the original tests against the agent's production code.
-4. A run **succeeds** when every hidden test and every original pre-existing test passes.
+4. A run **succeeds** when every hidden test, every original pre-existing test and every source check
+   of the task passes.
 
 **The agent's tests.** Restoring `tests/` removes whatever the agent changed or added there, so:
 
@@ -40,15 +41,25 @@ error codes), so a failure means the implementation is wrong, not that the test 
 
 The large tasks are written to triage as Large under Concordia's `feature` skill: L01 adds a
 dependency and a schema, L02 is security-sensitive, and both cross layers. Hidden tests use only HTTP
-and `IClock`, so they check L01's behavior, including that two hosts do not share data, but not that
-it really stores appointments in SQLite.
+and `IClock`, so they cannot see that L01 stores appointments in SQLite, or that L02 reads the key
+from configuration and compares it in constant time. A run that skipped those parts would pass the
+tests while spending less.
+
+**Source checks** cover that gap. `sourceChecks` in a task's `meta.json` lists text patterns that the
+runner looks for in the agent's `src/` folder, the same for every variant. A failed check fails the
+run, and the counts appear in the `source_checks_passed` and `source_checks_total` columns. They catch
+a run that skipped the work, but a text match shows that the code is there, not that it runs, and an
+agent that wanted to could satisfy one with dead code. L01's checks do not prove that appointments
+reach the database, and L02's "never log them" is not checked at all. Only L01 and L02 have source
+checks.
 
 ## Running it
 
 Requirements: .NET 10 SDK, Claude Code, `ANTHROPIC_API_KEY`.
 
 ```bash
-# Sanity check, no AI: base app is green and every task's hidden tests fail on it
+# Sanity check, no AI: base app is green, every task's hidden tests fail on it, and the source
+# checks accept the required code and reject the shortcuts
 benchmark/scripts/sanity.sh
 
 # Build the Concordia hook for this machine (the concordia variant loads the plugin from this repo)
