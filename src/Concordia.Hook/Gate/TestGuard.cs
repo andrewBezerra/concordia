@@ -39,7 +39,9 @@ internal static class TestGuard
         if (!guard.Enabled) return counts;
 
         // Not git status: it hides the old path of a staged rename, and that path must count as already gone.
-        foreach (var file in ChangedSince(repo, repo.Head()).Where(guard.Paths.Matches)) counts[file] = Count(ReadWorkingTree(repo, file) ?? string.Empty, guard);
+        // An unreadable file counts as committed: a zero here would hide any test removed from it later.
+        var head = repo.Head();
+        foreach (var file in ChangedSince(repo, head).Where(guard.Paths.Matches)) counts[file] = Count(ReadWorkingTree(repo, file) ?? ReadCommit(repo, head, file), guard);
         return counts;
     }
 
