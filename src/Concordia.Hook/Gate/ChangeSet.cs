@@ -65,6 +65,14 @@ internal static class ChangeSet
     private static byte[] Content(Repo repo, string file)
     {
         var full = Path.Combine(repo.Root, file);
-        return File.Exists(full) ? File.ReadAllBytes(full) : "<deleted>"u8.ToArray();
+        try
+        {
+            return File.Exists(full) ? File.ReadAllBytes(full) : "<deleted>"u8.ToArray();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Another process may hold the file. Failing here would skip the whole gate for this stop.
+            return "<unreadable>"u8.ToArray();
+        }
     }
 }

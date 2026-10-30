@@ -54,6 +54,19 @@ public class TestRemovalGateTests : IDisposable
     }
 
     [Fact]
+    public void A_changed_test_file_that_cannot_be_read_blocks()
+    {
+        SessionStart();
+        Write("tests/AppTests.cs", TwoTests + "\n// changed");
+
+        using var held = new FileStream(Path("tests/AppTests.cs"), FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+        var (code, _, stderr) = Stop();
+
+        Assert.Equal(StopCommand.Block, code);
+        Assert.Contains("tests/AppTests.cs: could not be read", stderr);
+    }
+
+    [Fact]
     public void Deleting_a_test_file_blocks_and_lists_it()
     {
         SessionStart();
