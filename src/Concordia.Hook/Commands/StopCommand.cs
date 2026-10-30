@@ -25,7 +25,7 @@ internal static class StopCommand
         var state = store.Load();
 
         var pinned = input.SessionId is not null && state.SessionConfigs.TryGetValue(input.SessionId, out var config) ? config : null;
-        var configNotice = pinned is not null && pinned != ConfigLoader.ReadConfigText(repo.Root)
+        var configNotice = pinned is not null && ConfigChanged(repo.Root, pinned)
             ? "Concordia: concordia.json changed during this session. The gate used the version from the session's start; the new one applies to a new session."
             : null;
 
@@ -111,7 +111,7 @@ internal static class StopCommand
             return 0;
         }
 
-        var fingerprint = ChangeSet.Fingerprint(repo, head, changes);
+        var fingerprint = ChangeSet.Fingerprint(repo, head, changes, pinned);
         if (fingerprint == state.LastGreenFingerprint || fingerprint == state.ReleasedFingerprint)
         {
             store.Save(state);
@@ -137,7 +137,7 @@ internal static class StopCommand
             if (result.TimedOut)
             {
                 // The step may have written files, so record the tree it left: that is what the next stop will see.
-                state.TimedOutFingerprint = ChangeSet.Fingerprint(repo, repo.Head(), ChangeSet.WatchedChanges(repo, settings.Watch));
+                state.TimedOutFingerprint = ChangeSet.Fingerprint(repo, repo.Head(), ChangeSet.WatchedChanges(repo, settings.Watch), pinned);
                 state.TimedOutStep = step;
 
                 // Files that keep changing between stops must not block forever, so timeouts share the failure cap.
@@ -188,6 +188,19 @@ internal static class StopCommand
         store.Save(state);
         WriteMessage(stdout, warning, $"Concordia: build and tests green ({elapsed.TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture)}s).");
         return 0;
+    }
+
+    /// <summary>An unreadable file counts as changed: the gate has the pinned text and must not fail open over a notice.</summary>
+    private static bool ConfigChanged(string repoRoot, string pinned)
+    {
+        try
+        {
+            return pinned != (ConfigLoader.ReadConfigText(repoRoot) ?? ConfigLoader.NoConfig);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return true;
+        }
     }
 
     private static string TimedOutWarning(string? step) =>

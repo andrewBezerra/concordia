@@ -334,6 +334,53 @@ public class GateInputProtectionTests : IDisposable
         Assert.Contains("build failed", stderr);
     }
 
+    [Fact]
+    public void A_config_created_during_a_session_that_had_none_does_not_replace_the_preset()
+    {
+        Write("App.slnx", "<Solution />");
+        Git("add", "-A");
+        Git("commit", "-q", "-m", "stack");
+        SessionStart();
+
+        Write("concordia.json", """{ "gate": { "enabled": false } }""");
+
+        var (code, stdout, _) = Stop();
+
+        Assert.Equal(0, code);
+        Assert.Contains("changed during this session", stdout);
+    }
+
+    [Fact]
+    public void A_config_that_cannot_be_read_at_stop_keeps_the_pinned_one()
+    {
+        CommitFile("concordia.json", """{ "commands": { "format": "", "build": "exit 1", "test": "echo ok" }, "watch": ["**/*.cs"] }""");
+        SessionStart();
+        Write("src/App.cs", "class App { int X; }");
+
+        using var held = new FileStream(Path.Combine(_root, "concordia.json"), FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+        var (code, _, stderr) = Stop();
+
+        Assert.Equal(StopCommand.Block, code);
+        Assert.Contains("build failed", stderr);
+    }
+
+    [Fact]
+    public void A_green_result_does_not_count_for_a_different_config()
+    {
+        CommitFile("concordia.json", """{ "commands": { "format": "", "build": "echo ok", "test": "echo ok" }, "watch": ["**/*.cs"] }""");
+        SessionStart();
+        Write("src/App.cs", "class App { int X; }");
+        Assert.Equal(0, Stop().Code);
+
+        // Back on the tree that went green, now judged by a config that fails. HEAD did not move.
+        Write("src/App.cs", "class App { int Y; }");
+        Write("concordia.json", """{ "commands": { "format": "", "build": "exit 1", "test": "echo ok" }, "watch": ["**/*.cs"] }""");
+        SessionStart("another-session");
+        Write("src/App.cs", "class App { int X; }");
+
+        Assert.Equal(StopCommand.Block, Stop("another-session").Code);
+    }
+
     private void SessionStart(string session = "test-session") =>
         SessionStartCommand.Run(new HookInput { Cwd = _root, SessionId = session }, new StringWriter());
 

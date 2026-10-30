@@ -38,7 +38,7 @@ internal sealed class GateState
 
     /// <summary>
     /// concordia.json as it was at session start, per session id. The gate uses this text, so a commit
-    /// or an edit during the session cannot weaken what checks that session. Absent when there was no file.
+    /// or an edit during the session cannot weaken what checks that session. <see cref="Config.ConfigLoader.NoConfig"/> when there was no file.
     /// </summary>
     public Dictionary<string, string> SessionConfigs { get; set; } = new();
 

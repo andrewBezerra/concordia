@@ -136,9 +136,10 @@ is not protected at all. Review changes to these files like any other change.
 The gate also keeps the `concordia.json` it found at session start, and that version checks the whole
 session, even if the file is edited or committed later. A stop that sees a different file says so, and
 the new version applies to a new session, so change the gate's configuration between sessions. This
-raises the bar but does not close it: the kept copy is in the state file, and a session that started with
-no `concordia.json` uses whatever appears later, because `/concordia:init` writes it during a session.
-`gate status` and `gate accept-test-removal` read the current file, not the kept copy.
+raises the bar but does not close it: the kept copy is in the state file. A session that started with no
+`concordia.json` keeps the preset, so a file `/concordia:init` writes counts from the next session; in a
+repository with no recognizable stack there is nothing to keep, and a new file counts at once.
+A green result only counts for the config that produced it. `gate status` and `gate accept-test-removal` read the current file, not the kept copy.
 
 ### Removed or skipped tests
 

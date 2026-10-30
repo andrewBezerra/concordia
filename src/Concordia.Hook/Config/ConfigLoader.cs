@@ -6,6 +6,9 @@ internal static class ConfigLoader
 {
     public const string FileName = "concordia.json";
 
+    /// <summary>The config a session pins when the repository has no file: the preset alone.</summary>
+    public const string NoConfig = "{}";
+
     /// <summary>Where the file may live, relative to the repository root. The first one found wins.</summary>
     public static readonly string[] Candidates = [FileName, $".claude/{FileName}"];
 
