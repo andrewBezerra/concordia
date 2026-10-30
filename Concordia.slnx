@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Concordia.Hook/Concordia.Hook.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Concordia.Hook.Tests/Concordia.Hook.Tests.csproj" />
+  </Folder>
+</Solution>

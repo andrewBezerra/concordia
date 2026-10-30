@@ -1,0 +1,20 @@
+{
+  "baseline": {
+    "description": "Claude Code with no plugins.",
+    "args": [],
+    "prefix": {}
+  },
+  "concordia": {
+    "description": "Concordia loaded from this repository (run build/publish-local first so the hook binary exists).",
+    "args": ["--plugin-dir", "{repo}/plugins/concordia"],
+    "prefix": {
+      "feature": "/concordia:feature ",
+      "fix": "/concordia:fix "
+    }
+  },
+  "superpowers": {
+    "description": "Superpowers installed once into this variant's isolated config directory (see benchmark/README.md).",
+    "args": [],
+    "prefix": {}
+  }
+}

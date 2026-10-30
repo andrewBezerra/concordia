@@ -1,0 +1,12 @@
+**/obj/
+src/**/bin/
+tests/**/bin/
+benchmark/**/bin/
+TestResults/
+*.user
+.vs/
+.idea/
+artifacts/
+
+# Native hook binaries are built by CI and published on the dist branch.
+plugins/concordia/bin/*/

@@ -1,0 +1,130 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+
+jobs:
+  test:
+    name: Tests and benchmark sanity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Hook unit and integration tests
+        run: dotnet test Concordia.slnx --nologo
+
+      - name: Benchmark sanity (base app green, hidden tests fail on it)
+        run: bash benchmark/scripts/sanity.sh
+
+      - name: Benchmark runner compiles
+        run: dotnet build benchmark/runner/run.cs --nologo
+
+  publish:
+    name: AOT ${{ matrix.rid }}
+    needs: test
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { rid: linux-x64, os: ubuntu-latest, smoke: true, experimental: false }
+          - { rid: linux-arm64, os: ubuntu-24.04-arm, smoke: true, experimental: false }
+          - { rid: osx-arm64, os: macos-latest, smoke: true, experimental: false }
+          - { rid: osx-x64, os: macos-latest, smoke: false, experimental: false }
+          - { rid: win-x64, os: windows-latest, smoke: true, experimental: false }
+          - { rid: win-arm64, os: windows-11-arm, smoke: true, experimental: true }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Native toolchain (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq clang zlib1g-dev
+
+      - name: Publish
+        shell: bash
+        run: dotnet publish src/Concordia.Hook/Concordia.Hook.csproj -c Release -r ${{ matrix.rid }} -o out --nologo
+
+      - name: Stage binary
+        shell: bash
+        run: |
+          mkdir -p staged
+          if [ -f out/concordia-hook.exe ]; then cp out/concordia-hook.exe staged/; else cp out/concordia-hook staged/; fi
+          ls -la staged
+
+      - name: Smoke test through the launcher
+        if: matrix.smoke
+        shell: bash
+        run: |
+          mkdir -p plugins/concordia/bin/${{ matrix.rid }}
+          cp staged/* plugins/concordia/bin/${{ matrix.rid }}/
+          chmod +x plugins/concordia/bin/concordia-hook plugins/concordia/bin/${{ matrix.rid }}/* || true
+          launcher=plugins/concordia/bin/concordia-hook
+          "$launcher" version
+          start=$(date +%s%N)
+          printf '{"tool_name":"Edit","tool_input":{"file_path":"%s/README.md"}}' "$PWD" | "$launcher" pre-tool
+          end=$(date +%s%N)
+          echo "pre-tool round trip: $(( (end - start) / 1000000 )) ms"
+          "$launcher" gate status
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: concordia-hook-${{ matrix.rid }}
+          path: staged/*
+          if-no-files-found: error
+
+  dist:
+    name: Publish dist branch
+    needs: publish
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: concordia-hook-*
+
+      - name: Assemble plugin with binaries
+        run: |
+          for dir in artifacts/concordia-hook-*; do
+            rid="${dir#artifacts/concordia-hook-}"
+            mkdir -p "plugins/concordia/bin/$rid"
+            cp "$dir"/* "plugins/concordia/bin/$rid/"
+          done
+          chmod +x plugins/concordia/bin/concordia-hook plugins/concordia/bin/*/concordia-hook*
+          ls -laR plugins/concordia/bin
+          mkdir -p /tmp/dist
+          cp -r .claude-plugin plugins README.md LICENSE /tmp/dist/
+
+      - name: Push dist (single commit, no history growth)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd /tmp/dist
+          git init -q -b dist
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "dist: ${GITHUB_SHA::7}"
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" dist

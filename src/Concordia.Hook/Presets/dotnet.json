@@ -1,0 +1,95 @@
+{
+  "stack": "dotnet",
+  "commands": {
+    "format": "dotnet format --include {files} --verbosity quiet",
+    "build": "dotnet build --nologo -v q -clp:ErrorsOnly",
+    "test": "dotnet test --nologo -v q --no-build"
+  },
+  "watch": [
+    "**/*.cs",
+    "**/*.csproj",
+    "**/*.fsproj",
+    "**/*.fs",
+    "**/*.razor",
+    "**/*.cshtml",
+    "**/*.props",
+    "**/*.targets",
+    "**/*.sln",
+    "**/*.slnx",
+    "global.json"
+  ],
+  "protect": [
+    "**/Migrations/**"
+  ],
+  "lenses": {
+    "security": {
+      "paths": [
+        "**/Auth*/**",
+        "**/*Auth*.cs",
+        "**/*Token*.cs",
+        "**/*Password*.cs",
+        "**/*Crypto*.cs",
+        "**/*Permission*.cs",
+        "**/*Controller.cs",
+        "**/Endpoints/**",
+        "**/Program.cs",
+        "**/appsettings*.json",
+        "**/*.csproj"
+      ],
+      "signals": [
+        "FromSqlRaw",
+        "ExecuteSqlRaw",
+        "SqlCommand",
+        "Process.Start",
+        "[AllowAnonymous]",
+        "Html.Raw",
+        "BinaryFormatter",
+        "TypeNameHandling",
+        "PackageReference",
+        "MD5",
+        "SHA1"
+      ]
+    },
+    "performance": {
+      "paths": [
+        "**/*Repository.cs",
+        "**/Repositories/**",
+        "**/*DbContext.cs",
+        "**/Data/**",
+        "**/Queries/**",
+        "**/*Cache*.cs",
+        "**/*.sql"
+      ],
+      "signals": [
+        ".Include(",
+        ".ToList()",
+        ".Result",
+        ".Wait()",
+        "Thread.Sleep",
+        "AsEnumerable()",
+        "new HttpClient("
+      ]
+    },
+    "domain": {
+      "paths": [
+        "**/Domain/**",
+        "**/Core/**",
+        "**/*Service.cs",
+        "**/*Policy.cs",
+        "**/*Rule*.cs",
+        "**/*Validator.cs"
+      ],
+      "signals": []
+    }
+  },
+  "escalation": {
+    "maxDiffLines": 400,
+    "maxProjects": 3
+  },
+  "gate": {
+    "enabled": true,
+    "maxAttempts": 3,
+    "maxOutputLines": 30,
+    "timeoutSeconds": 600
+  }
+}

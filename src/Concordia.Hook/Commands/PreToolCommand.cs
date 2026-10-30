@@ -1,0 +1,35 @@
+using Concordia.Hook.Config;
+using Concordia.Hook.Infra;
+
+namespace Concordia.Hook.Commands;
+
+/// <summary>PreToolUse on Edit/Write: blocks edits to protected files that already exist in HEAD.</summary>
+internal static class PreToolCommand
+{
+    public const int Block = 2;
+
+    public static int Run(HookInput input, TextWriter stderr)
+    {
+        var path = input.ToolInput?.TargetPath;
+        if (string.IsNullOrEmpty(path)) return 0;
+
+        var repo = Repo.Find(path) ?? Repo.Find(input.WorkingDirectory);
+        if (repo is null) return 0;
+
+        var settings = ConfigLoader.Load(repo.Root);
+        if (settings is null || settings.Protect.IsEmpty) return 0;
+
+        var relative = repo.Relative(path);
+        var rule = settings.Protect.Match(relative);
+        if (rule is null) return 0;
+
+        // New files under a protected path are fine (e.g. a new migration). Committed ones are not.
+        if (!repo.ExistsInHead(relative)) return 0;
+
+        stderr.WriteLine(
+            $"Concordia: '{relative}' is protected by the rule '{rule}' in concordia.json, and it is already committed. " +
+            "Do not edit it (for example, an applied EF Core migration). Create a new file instead, " +
+            "or ask the user to change the rule.");
+        return Block;
+    }
+}
