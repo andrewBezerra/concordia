@@ -8,6 +8,9 @@ internal sealed class GateState
     /// <summary>Fingerprint of the last working tree that passed build and tests.</summary>
     public string? LastGreenFingerprint { get; set; }
 
+    /// <summary>Fingerprint of the tree the gate gave up on. It stays released until the tree changes.</summary>
+    public string? ReleasedFingerprint { get; set; }
+
     /// <summary>Consecutive failed verifications. Reset on success or when the gate releases.</summary>
     public int Attempts { get; set; }
 
@@ -23,6 +26,9 @@ internal sealed class GateState
 
     /// <summary>HEAD at session start, per session id. Lets the gate verify commits made during a session.</summary>
     public Dictionary<string, string> SessionHeads { get; set; } = new();
+
+    /// <summary>Watched files already dirty at session start, with their hashes, per session id. They are not the session's work.</summary>
+    public Dictionary<string, Dictionary<string, string>> SessionBaselines { get; set; } = new();
 }
 
 internal sealed class StateStore(Repo repo)
@@ -48,7 +54,9 @@ internal sealed class StateStore(Repo repo)
     {
         while (state.SessionHeads.Count > MaxSessions)
         {
-            state.SessionHeads.Remove(state.SessionHeads.Keys.First());
+            var oldest = state.SessionHeads.Keys.First();
+            state.SessionHeads.Remove(oldest);
+            state.SessionBaselines.Remove(oldest);
         }
 
         Directory.CreateDirectory(repo.StateDir);

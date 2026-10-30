@@ -160,6 +160,89 @@ public class GateIntegrationTests : IDisposable
         Assert.Contains("src/Validação.cs", File.ReadAllText(Path.Combine(_root, ".git", "concordia", "review-pack.md")));
     }
 
+    [Fact]
+    public void Stop_ignores_files_already_dirty_at_session_start()
+    {
+        UseCommands(build: "exit 1", test: "exit 0");
+        Write("src/App.cs", "class App { int UserWork; }");
+        Write("src/UserDraft.cs", "class Draft {}");
+        SessionStart();
+
+        Assert.Equal(0, Stop().Code);
+    }
+
+    [Fact]
+    public void Stop_verifies_when_the_session_edits_a_file_that_was_already_dirty()
+    {
+        UseCommands(build: "exit 1", test: "exit 0");
+        Write("src/App.cs", "class App { int UserWork; }");
+        SessionStart();
+
+        Write("src/App.cs", "class App { int UserWork; int AgentWork; }");
+
+        Assert.Equal(StopCommand.Block, Stop().Code);
+    }
+
+    [Fact]
+    public void Stop_verifies_when_the_session_edits_another_file()
+    {
+        UseCommands(build: "exit 1", test: "exit 0");
+        Write("src/App.cs", "class App { int UserWork; }");
+        SessionStart();
+
+        Write("src/New.cs", "class New {}");
+
+        Assert.Equal(StopCommand.Block, Stop().Code);
+    }
+
+    [Fact]
+    public void Stop_verifies_when_the_session_reverts_a_dirty_file()
+    {
+        UseCommands(build: "exit 1", test: "exit 0");
+        Git("add", "-A");
+        Git("commit", "-q", "-m", "red commands");
+        Write("src/App.cs", "class App { int UserWork; }");
+        SessionStart();
+
+        Git("checkout", "--", "src/App.cs");
+
+        Assert.Equal(StopCommand.Block, Stop().Code);
+    }
+
+    [Fact]
+    public void Starting_point_survives_a_second_session_start()
+    {
+        UseCommands(build: "exit 1", test: "exit 0");
+        SessionStart();
+        Write("src/App.cs", "class App { int AgentWork; }");
+
+        // Claude Code fires SessionStart again on resume and after compaction.
+        SessionStart();
+
+        Assert.Equal(StopCommand.Block, Stop().Code);
+    }
+
+    [Fact]
+    public void Released_gate_stays_released_until_the_tree_changes()
+    {
+        UseCommands(build: "exit 1", test: "exit 0");
+        Write("src/App.cs", "class App {");
+        for (var attempt = 1; attempt <= 3; attempt++) Assert.Equal(StopCommand.Block, Stop().Code);
+        Assert.Contains("Gate released", Stop().StdOut);
+
+        var (code, stdout, _) = Stop();
+        Assert.Equal(0, code);
+        Assert.DoesNotContain("Gate released", stdout);
+
+        Write("src/App.cs", "class App { {");
+        var (changedCode, _, changedError) = Stop();
+        Assert.Equal(StopCommand.Block, changedCode);
+        Assert.Contains("attempt 1 of 3", changedError);
+    }
+
+    private void SessionStart() =>
+        SessionStartCommand.Run(new HookInput { Cwd = _root, SessionId = "test-session" }, new StringWriter());
+
     private (int Code, string StdOut, string StdErr) Stop()
     {
         var stdout = new StringWriter();

@@ -26,8 +26,14 @@ internal static class SessionStartCommand
         var state = store.Load();
         if (input.SessionId is not null)
         {
-            state.SessionHeads.Remove(input.SessionId);
-            state.SessionHeads[input.SessionId] = repo.Head();
+            // SessionStart also fires on resume and after compaction: the original starting point
+            // must survive those, or the work done so far would stop counting as the session's.
+            var known = state.SessionHeads.Remove(input.SessionId, out var head);
+            state.SessionHeads[input.SessionId] = known ? head! : repo.Head();
+            if (!state.SessionBaselines.ContainsKey(input.SessionId))
+            {
+                state.SessionBaselines[input.SessionId] = ChangeSet.Hashes(repo, ChangeSet.WatchedChanges(repo, settings.Watch));
+            }
         }
 
         store.Save(state);

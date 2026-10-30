@@ -43,7 +43,9 @@ Then, in each repository:
 | `/concordia:init` | Write `concordia.json` for the detected stack and check the commands |
 
 The gate works in every session, with or without these commands: whenever the agent changed code,
-it must leave the build and tests green before it stops.
+it must leave the build and tests green before it stops. Files that were already dirty when the
+session started do not trigger it, as long as they stay as they were. Once the session changes
+anything, the whole working tree is verified, your uncommitted work included.
 
 ## How it works
 
@@ -52,7 +54,8 @@ SessionStart ─▶ one line of context (no skills preloaded)
 Edit / Write ─▶ pre-tool: block edits to committed protected files (e.g. applied migrations)
              └▶ post-tool: remember the file (formatting happens once, at the end)
 Agent stops  ─▶ stop gate: format edited files → build → test
-                  red   → errors summarized and sent back to the agent (up to 3 attempts)
+                  red   → errors summarized and sent back to the agent (up to 3 attempts),
+                          then released until the tree changes
                   green → done; unchanged trees are never re-verified
 Review       ─▶ review-pack: diff + stats into one file, lenses chosen by rules
                   reviewer subagents read the pack and answer in JSON with confidence scores
