@@ -29,6 +29,21 @@ internal sealed class GateState
 
     /// <summary>Watched files already dirty at session start, with their hashes, per session id. They are not the session's work.</summary>
     public Dictionary<string, Dictionary<string, string>> SessionBaselines { get; set; } = new();
+
+    /// <summary>Test and skip counts of the test files already dirty at session start, per session id.</summary>
+    public Dictionary<string, Dictionary<string, TestCounts>> SessionTestCounts { get; set; } = new();
+
+    /// <summary>Session whose test removal is waiting for the user ("" when the hook got no session id); null when none is.</summary>
+    public string? TestRemovalSession { get; set; }
+
+    /// <summary>Fingerprint of the tree whose test removal the user accepted from a terminal.</summary>
+    public string? AcceptedTestRemoval { get; set; }
+
+    /// <summary>Fingerprint of the tree the gate stopped blocking on after maxAttempts. This is not an acceptance.</summary>
+    public string? ReleasedTestRemoval { get; set; }
+
+    /// <summary>Consecutive stops blocked for test removal. Separate from <see cref="Attempts"/>, which counts red builds.</summary>
+    public int TestRemovalAttempts { get; set; }
 }
 
 internal sealed class StateStore(Repo repo)
@@ -57,6 +72,7 @@ internal sealed class StateStore(Repo repo)
             var oldest = state.SessionHeads.Keys.First();
             state.SessionHeads.Remove(oldest);
             state.SessionBaselines.Remove(oldest);
+            state.SessionTestCounts.Remove(oldest);
         }
 
         Directory.CreateDirectory(repo.StateDir);

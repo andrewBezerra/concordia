@@ -59,6 +59,8 @@ internal static class Cli
                               Write a compact review package and pick review lenses
               gate status|on|off [reason]
                               Inspect or toggle the verification gate for this repository
+              gate accept-test-removal
+                              Accept the tests removed or skipped in the current tree (terminal only)
               init [--force]  Write concordia.json for the detected stack
               version         Print the version
             """);

@@ -50,7 +50,44 @@ internal static class StopCommand
 
         state.Touched.Clear();
 
-        // 2. Decide whether there is anything to verify.
+        // 2. Tests removed or skipped: only the user can accept that, so this comes before everything else.
+        var removal = TestGuard.Check(repo, settings, state, input.SessionId);
+        string? unaccepted = null;
+        if (removal.Losses.Count == 0)
+        {
+            state.TestRemovalSession = null;
+            state.AcceptedTestRemoval = null;
+            state.ReleasedTestRemoval = null;
+            state.TestRemovalAttempts = 0;
+        }
+        else if (removal.Fingerprint != state.AcceptedTestRemoval)
+        {
+            state.TestRemovalSession = input.SessionId ?? "";
+            var list = TestGuard.Describe(removal, settings.MaxOutputLines);
+            if (removal.Fingerprint != state.ReleasedTestRemoval)
+            {
+                state.TestRemovalAttempts++;
+                if (state.TestRemovalAttempts <= settings.MaxAttempts)
+                {
+                    store.Save(state);
+                    stderr.WriteLine(
+                        $"Concordia gate: tests were removed or skipped in this session (attempt {state.TestRemovalAttempts} of {settings.MaxAttempts}). " +
+                        "Restore them. If removing them is right, only the user can accept it: stop and ask them to run " +
+                        $"\"{SessionStartCommand.HelperPath()}\" gate accept-test-removal in a terminal, and tell them why.\n{list}");
+                    return Block;
+                }
+
+                state.TestRemovalAttempts = 0;
+                state.ReleasedTestRemoval = removal.Fingerprint;
+            }
+
+            // The session may stop so that it cannot loop forever, but nobody has accepted anything.
+            unaccepted =
+                "Concordia: test removal is UNACCEPTED. The gate stopped blocking so the session could end, which is not an acceptance. " +
+                $"Review it, then restore the tests or run \"{SessionStartCommand.HelperPath()}\" gate accept-test-removal in a terminal.\n{list}";
+        }
+
+        // 3. Decide whether there is anything to verify.
         var head = repo.Head();
         var changes = ChangeSet.WatchedChanges(repo, settings.Watch);
         var sessionHead = input.SessionId is not null && state.SessionHeads.TryGetValue(input.SessionId, out var h) ? h : null;
@@ -63,6 +100,7 @@ internal static class StopCommand
         if (!committedThisSession && !ChangeSet.DiffersFrom(repo, changes, baseline))
         {
             store.Save(state);
+            WriteMessage(stdout, unaccepted, null);
             return 0;
         }
 
@@ -70,10 +108,11 @@ internal static class StopCommand
         if (fingerprint == state.LastGreenFingerprint || fingerprint == state.ReleasedFingerprint)
         {
             store.Save(state);
+            WriteMessage(stdout, unaccepted, null);
             return 0;
         }
 
-        // 3. Build, then test. Stop at the first failing step.
+        // 4. Build, then test. Stop at the first failing step.
         var elapsed = TimeSpan.Zero;
         foreach (var (step, command) in Steps(settings))
         {
@@ -84,7 +123,7 @@ internal static class StopCommand
             {
                 state.Attempts = 0;
                 store.Save(state);
-                WriteMessage(stdout, $"Concordia: {step} timed out after {settings.CommandTimeout.TotalSeconds:0}s. Gate skipped; verify manually.");
+                WriteMessage(stdout, unaccepted, $"Concordia: {step} timed out after {settings.CommandTimeout.TotalSeconds:0}s. Gate skipped; verify manually.");
                 return 0;
             }
 
@@ -96,7 +135,7 @@ internal static class StopCommand
                 state.Attempts = 0;
                 state.ReleasedFingerprint = fingerprint;
                 store.Save(state);
-                WriteMessage(stdout,
+                WriteMessage(stdout, unaccepted,
                     $"Concordia: {step} still failing after {settings.MaxAttempts} fix attempts. " +
                     "Gate released so you can take over. Do not merge until it is green.");
                 return 0;
@@ -114,7 +153,7 @@ internal static class StopCommand
         state.LastGreenFingerprint = fingerprint;
         state.ReleasedFingerprint = null;
         store.Save(state);
-        WriteMessage(stdout, $"Concordia: build and tests green ({elapsed.TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture)}s).");
+        WriteMessage(stdout, unaccepted, $"Concordia: build and tests green ({elapsed.TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture)}s).");
         return 0;
     }
 
@@ -140,6 +179,13 @@ internal static class StopCommand
     {
         if (settings.BuildCommand is not null) yield return ("build", settings.BuildCommand);
         if (settings.TestCommand is not null) yield return ("tests", settings.TestCommand);
+    }
+
+    /// <summary>Claude Code reads one JSON object from stdout, so the unaccepted-removal warning shares it with the gate's message.</summary>
+    private static void WriteMessage(TextWriter stdout, string? unaccepted, string? message)
+    {
+        if (unaccepted is null && message is null) return;
+        WriteMessage(stdout, unaccepted is null ? message! : message is null ? unaccepted : $"{unaccepted}\n{message}");
     }
 
     private static void WriteMessage(TextWriter stdout, string message) =>

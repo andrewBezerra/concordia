@@ -4,6 +4,11 @@ namespace Concordia.Hook.Config;
 
 internal sealed record LensSettings(string Name, GlobSet Paths, IReadOnlyList<string> Signals);
 
+internal sealed record TestGuardSettings(GlobSet Paths, IReadOnlyList<string> Markers, IReadOnlyList<string> Skips)
+{
+    public bool Enabled => !Paths.IsEmpty && (Markers.Count > 0 || Skips.Count > 0);
+}
+
 /// <summary>Effective configuration after merging the preset with the repository file.</summary>
 internal sealed record Settings(
     string Stack,
@@ -18,7 +23,8 @@ internal sealed record Settings(
     bool GateEnabled,
     int MaxAttempts,
     int MaxOutputLines,
-    TimeSpan CommandTimeout)
+    TimeSpan CommandTimeout,
+    TestGuardSettings TestGuard)
 {
     public static Settings From(string stack, ConcordiaConfig config)
     {
@@ -41,8 +47,14 @@ internal sealed record Settings(
             config.Gate?.Enabled ?? true,
             config.Gate?.MaxAttempts ?? 3,
             config.Gate?.MaxOutputLines ?? 30,
-            TimeSpan.FromSeconds(config.Gate?.TimeoutSeconds ?? 600));
+            TimeSpan.FromSeconds(config.Gate?.TimeoutSeconds ?? 600),
+            new TestGuardSettings(
+                new GlobSet(config.TestGuard?.Paths ?? []),
+                NonEmpty(config.TestGuard?.Markers),
+                NonEmpty(config.TestGuard?.Skips)));
     }
+
+    private static List<string> NonEmpty(List<string>? values) => (values ?? []).Where(v => !string.IsNullOrEmpty(v)).ToList();
 
     private static string? NullIfEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
 }
