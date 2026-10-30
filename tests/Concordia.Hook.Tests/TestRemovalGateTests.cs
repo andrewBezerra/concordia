@@ -67,6 +67,20 @@ public class TestRemovalGateTests : IDisposable
     }
 
     [Fact]
+    public void A_test_file_unreadable_at_session_start_keeps_its_committed_count()
+    {
+        Write("tests/AppTests.cs", TwoTests + "\n// dirty");
+        using (new FileStream(Path("tests/AppTests.cs"), FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            SessionStart();
+        }
+
+        Write("tests/AppTests.cs", OneTestLess);
+
+        Assert.Equal(StopCommand.Block, Stop().Code);
+    }
+
+    [Fact]
     public void Deleting_a_test_file_blocks_and_lists_it()
     {
         SessionStart();
