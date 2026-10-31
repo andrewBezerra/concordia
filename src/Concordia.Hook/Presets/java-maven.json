@@ -1,0 +1,133 @@
+{
+  "stack": "java-maven",
+  "commands": {
+    "format": "",
+    "build": "mvn -q -B -DskipTests test-compile",
+    "test": "mvn -q -B test"
+  },
+  "watch": [
+    "**/*.java",
+    "**/*.kt",
+    "**/*.kts",
+    "**/*.groovy",
+    "**/pom.xml"
+  ],
+  "protect": [
+    "**/db/migration/**",
+    "**/db/changelog/**"
+  ],
+  "lenses": {
+    "security": {
+      "paths": [
+        "**/*Controller.java",
+        "**/*Controller.kt",
+        "**/*Resource.java",
+        "**/*Security*.java",
+        "**/*Security*.kt",
+        "**/*Auth*.java",
+        "**/*Auth*.kt",
+        "**/*Token*.java",
+        "**/*Token*.kt",
+        "**/*Password*.java",
+        "**/*Crypto*.java",
+        "**/*Filter.java",
+        "**/*Filter.kt",
+        "**/application*.yml",
+        "**/application*.yaml",
+        "**/application*.properties",
+        "**/pom.xml"
+      ],
+      "signals": [
+        "createNativeQuery(",
+        "executeQuery(",
+        "executeUpdate(",
+        "Statement.execute",
+        "Runtime.getRuntime().exec",
+        "ProcessBuilder",
+        "ObjectInputStream",
+        "permitAll()",
+        "csrf().disable",
+        "csrf(AbstractHttpConfigurer::disable",
+        "@CrossOrigin(\"*\")",
+        "MessageDigest.getInstance(\"MD5\")",
+        "MessageDigest.getInstance(\"SHA-1\")",
+        "TrustAllCerts",
+        "setHostnameVerifier(",
+        "<dependency>"
+      ]
+    },
+    "performance": {
+      "paths": [
+        "**/*Repository.java",
+        "**/*Repository.kt",
+        "**/repository/**",
+        "**/repositories/**",
+        "**/*Dao.java",
+        "**/*Cache*.java",
+        "**/*.sql"
+      ],
+      "signals": [
+        "findAll()",
+        "FetchType.EAGER",
+        "@Query(",
+        "nativeQuery = true",
+        ".parallelStream()",
+        "Thread.sleep(",
+        ".block()",
+        "new RestTemplate("
+      ]
+    },
+    "domain": {
+      "paths": [
+        "**/domain/**",
+        "**/model/**",
+        "**/core/**",
+        "**/*Service.java",
+        "**/*Service.kt",
+        "**/*Policy.java",
+        "**/*Policy.kt",
+        "**/*Rule*.java",
+        "**/*Validator.java",
+        "**/*Validator.kt"
+      ],
+      "signals": []
+    }
+  },
+  "escalation": {
+    "maxDiffLines": 400,
+    "maxProjects": 3
+  },
+  "gate": {
+    "enabled": true,
+    "maxAttempts": 3,
+    "maxOutputLines": 30,
+    "timeoutSeconds": 600
+  },
+  "testGuard": {
+    "paths": [
+      "**/src/test/**/*.java",
+      "**/src/test/**/*.kt",
+      "**/*Test.java",
+      "**/*Tests.java",
+      "**/*IT.java",
+      "**/*Test.kt",
+      "**/*Tests.kt"
+    ],
+    "markers": [
+      "^@Test",
+      "^@ParameterizedTest",
+      "^@RepeatedTest",
+      "^@TestFactory",
+      "^@TestTemplate"
+    ],
+    "skips": [
+      "@Disabled",
+      "@Ignore",
+      "assumeTrue(",
+      "assumeFalse(",
+      "assumingThat(",
+      "Assumptions.abort(",
+      "Assume.assume"
+    ]
+  }
+}

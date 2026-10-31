@@ -1,0 +1,132 @@
+{
+  "stack": "node",
+  "commands": {
+    "format": "npx --no-install prettier --write --log-level warn {files}",
+    "build": "npm run build --if-present",
+    "test": "npm run test --if-present"
+  },
+  "watch": [
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.mts",
+    "**/*.cts",
+    "**/*.js",
+    "**/*.jsx",
+    "**/*.mjs",
+    "**/*.cjs",
+    "**/*.vue",
+    "**/*.svelte",
+    "**/package.json",
+    "**/tsconfig*.json"
+  ],
+  "protect": [
+    "**/migrations/**",
+    "**/prisma/migrations/**"
+  ],
+  "lenses": {
+    "security": {
+      "paths": [
+        "**/auth/**",
+        "**/*auth*.*",
+        "**/*token*.*",
+        "**/*password*.*",
+        "**/*crypto*.*",
+        "**/*permission*.*",
+        "**/middleware/**",
+        "**/routes/**",
+        "**/controllers/**",
+        "**/api/**",
+        "**/package.json"
+      ],
+      "signals": [
+        "eval(",
+        "new Function(",
+        "child_process",
+        "execSync(",
+        "innerHTML",
+        "dangerouslySetInnerHTML",
+        "$queryRawUnsafe",
+        "$executeRawUnsafe",
+        "Sequelize.literal(",
+        "createHash('md5'",
+        "createHash(\"md5\"",
+        "rejectUnauthorized: false",
+        "\"dependencies\"",
+        "\"devDependencies\""
+      ]
+    },
+    "performance": {
+      "paths": [
+        "**/repositories/**",
+        "**/*.repository.*",
+        "**/*repository.*",
+        "**/db/**",
+        "**/prisma/**",
+        "**/queries/**",
+        "**/*cache*.*",
+        "**/*.sql"
+      ],
+      "signals": [
+        "readFileSync(",
+        "writeFileSync(",
+        "execSync(",
+        "findMany(",
+        "include:",
+        "JSON.parse(",
+        "setTimeout(",
+        "await new Promise("
+      ]
+    },
+    "domain": {
+      "paths": [
+        "**/domain/**",
+        "**/core/**",
+        "**/services/**",
+        "**/*service.*",
+        "**/*policy.*",
+        "**/*rule*.*",
+        "**/*validator*.*"
+      ],
+      "signals": []
+    }
+  },
+  "escalation": {
+    "maxDiffLines": 400,
+    "maxProjects": 3
+  },
+  "gate": {
+    "enabled": true,
+    "maxAttempts": 3,
+    "maxOutputLines": 30,
+    "timeoutSeconds": 600
+  },
+  "testGuard": {
+    "paths": [
+      "**/*.test.*",
+      "**/*.spec.*",
+      "**/__tests__/**"
+    ],
+    "markers": [
+      "^it(",
+      "^test(",
+      "^it.each",
+      "^test.each",
+      "^it.concurrent(",
+      "^test.concurrent("
+    ],
+    "skips": [
+      "^it.skip(",
+      "^test.skip(",
+      "^describe.skip(",
+      "^it.skipIf(",
+      "^test.skipIf(",
+      "^describe.skipIf(",
+      "^xit(",
+      "^xtest(",
+      "^xdescribe(",
+      "^it.only(",
+      "^test.only(",
+      "^describe.only("
+    ]
+  }
+}

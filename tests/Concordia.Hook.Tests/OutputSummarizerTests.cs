@@ -77,4 +77,89 @@ public class OutputSummarizerTests
         Assert.Equal(4, lines.Length);
         Assert.Equal("... 7 more line(s) omitted", lines[^1]);
     }
+
+    [Fact]
+    public void Pytest_short_summary_is_kept()
+    {
+        const string output = """
+            ============================= test session starts ==============================
+            collected 12 items
+
+            tests/test_cart.py ..F.........                                          [100%]
+            =========================== short test summary info ============================
+            FAILED tests/test_cart.py::test_discount - assert 90 == 81
+            ========================= 1 failed, 11 passed in 0.31s =========================
+            """;
+
+        var summary = OutputSummarizer.Summarize(output, Root, 30);
+
+        Assert.StartsWith("FAILED tests/test_cart.py::test_discount - assert 90 == 81", summary);
+    }
+
+    [Fact]
+    public void Jest_failure_keeps_the_name_message_and_first_source_frame()
+    {
+        const string output = """
+             FAIL  src/cart.test.ts
+              ● cart › applies the discount
+
+                expect(received).toBe(expected) // Object.is equality
+
+                Expected: 81
+                Received: 90
+
+                  at Object.<anonymous> (src/cart.test.ts:12:23)
+                  at Promise.then.completed (node_modules/jest-circus/build/utils.js:298:28)
+            """;
+
+        var lines = OutputSummarizer.Summarize(output, Root, 30).Split('\n');
+
+        Assert.Contains("FAIL  src/cart.test.ts", lines);
+        Assert.Contains("● cart › applies the discount", lines);
+        Assert.Contains(lines, l => l.Contains("Expected: 81"));
+        Assert.Contains("  at Object.<anonymous> (src/cart.test.ts:12:23)", lines);
+        Assert.DoesNotContain(lines, l => l.Contains("node_modules"));
+    }
+
+    [Fact]
+    public void Maven_errors_are_kept_without_the_closing_advice()
+    {
+        const string output = """
+            [ERROR] /repo/src/main/java/shop/Cart.java:[14,9] cannot find symbol
+            [ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.13.0:compile (default-compile) on project shop: Compilation failure
+            [ERROR] -> [Help 1]
+            [ERROR] Re-run Maven using the -X switch to enable full debug logging.
+            """;
+
+        var summary = OutputSummarizer.Summarize(output, Root, 30);
+
+        Assert.Equal("[ERROR] src/main/java/shop/Cart.java:[14,9] cannot find symbol", summary);
+    }
+
+    [Fact]
+    public void Gradle_and_javac_failures_are_kept()
+    {
+        const string output = """
+            > Task :compileJava FAILED
+            src/main/java/shop/Cart.java:14: error: cannot find symbol
+            CartTest > appliesDiscount() FAILED
+                org.opentest4j.AssertionFailedError: expected: <81> but was: <90>
+                    at app//shop.CartTest.appliesDiscount(CartTest.java:21)
+            """;
+
+        var lines = OutputSummarizer.Summarize(output, Root, 30).Split('\n');
+
+        Assert.Contains("src/main/java/shop/Cart.java:14: error: cannot find symbol", lines);
+        Assert.Contains("CartTest > appliesDiscount() FAILED", lines);
+        Assert.Contains("  org.opentest4j.AssertionFailedError: expected: <81> but was: <90>", lines);
+        Assert.Contains("  at app//shop.CartTest.appliesDiscount(CartTest.java:21)", lines);
+    }
+
+    [Fact]
+    public void TypeScript_compiler_errors_are_kept()
+    {
+        const string output = "src/cart.ts(12,5): error TS2322: Type 'string' is not assignable to type 'number'.";
+
+        Assert.Equal("src/cart.ts(12,5): TS2322 Type 'string' is not assignable to type 'number'.", OutputSummarizer.Summarize(output, Root, 30));
+    }
 }

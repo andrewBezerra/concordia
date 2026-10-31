@@ -57,6 +57,8 @@ internal static class GateCommand
                 var settings = ConfigLoader.Load(repo.Root);
                 var config = ConfigLoader.FindConfigPath(repo.Root) is { } path ? repo.Relative(path) : "none (preset defaults)";
                 stdout.WriteLine($"Stack: {settings?.Stack ?? "not detected"}");
+                var others = ConfigLoader.DetectStacks(repo.Root).Where(found => found != settings?.Stack).ToList();
+                if (others.Count > 0) stdout.WriteLine($"Also found at the root: {string.Join(", ", others)} (one stack per repository for now; set commands in concordia.json to cover more)");
                 stdout.WriteLine($"Config: {config}");
                 stdout.WriteLine($"Gate: {(settings is null || !settings.GateEnabled || state.Disabled ? "off" : "on")}{(state.Disabled ? $" ({state.DisabledReason})" : "")}");
                 stdout.WriteLine($"Build: {settings?.BuildCommand ?? "-"}");

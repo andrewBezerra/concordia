@@ -24,7 +24,8 @@ unavoidable, keeps the process proportional to the task, and measures the result
   to what failed, the mean CI time with tips, and the tokens per prompt. It opens by itself.
 
 The hooks are a single native binary (C#, Native AOT): a few milliseconds per call and nothing to
-install besides Claude Code (2.1.287 or later for the panel; `gh` is optional, for its CI card). A .NET preset ships built in; other stacks work through `concordia.json`.
+install besides Claude Code (2.1.287 or later for the panel; `gh` is optional, for its CI card). Presets ship for
+.NET, TypeScript/Node, Python and Java (Maven and Gradle); any other stack works through `concordia.json`.
 
 > Status: early (0.3). The benchmark numbers will be published in this README once collected.
 
@@ -149,6 +150,34 @@ Components:
 | `concordia-hook` | Native binary | Hooks, review pack, gate control |
 | `hooks/panel` | Mod (TypeScript, run by Claude Code) | The panel, its commands and the status line |
 
+## Stacks
+
+Concordia detects the stack from files at the repository root and loads its preset. When a root has
+several, the first one in this table wins (a .NET solution with a `package.json` for tooling stays .NET).
+
+| Stack | Detected by | Build | Test | Format | Protected by default |
+| --- | --- | --- | --- | --- | --- |
+| `dotnet` | `*.sln`, `*.slnx`, `*.csproj`, `*.fsproj`, `global.json`, `Directory.Build.props` (or a `*.csproj` up to 3 folders down) | `dotnet build` | `dotnet test` | `dotnet format` | `**/Migrations/**` |
+| `java-maven` | `pom.xml` | `mvn -q -B -DskipTests test-compile` | `mvn -q -B test` | none | Flyway and Liquibase folders |
+| `java-gradle` | `build.gradle(.kts)`, `settings.gradle(.kts)` | `gradle -q classes testClasses` | `gradle -q test` | none | Flyway and Liquibase folders |
+| `python` | `pyproject.toml`, `setup.py`, `setup.cfg`, `requirements.txt`, `Pipfile` | none | `python -m pytest -q` | `ruff format` | `**/migrations/**`, `**/alembic/versions/**` |
+| `node` | `package.json` | `npm run build --if-present` | `npm run test --if-present` | `prettier --write` | `**/migrations/**` |
+
+The preset's commands follow the tools the repository uses: `pnpm`, `yarn` or `bun` from the lockfile,
+`uv run`, `poetry run` or `pipenv run` from the Python lockfile, and the `mvnw` or `gradlew` wrapper when
+the repository has one. A command written in `concordia.json` is always used exactly as written.
+
+Each preset also brings its review lenses (for example `$queryRawUnsafe` and `child_process` in Node,
+`pickle.load` and `shell=True` in Python, `createNativeQuery(` and `ObjectInputStream` in Java) and its
+test markers for the [removed or skipped tests](#removed-or-skipped-tests) check: xUnit, NUnit and MSTest;
+Jest and Vitest (`it.only` counts as a skip, since it silences every other test); pytest and unittest;
+JUnit 4 and 5.
+
+**One stack per repository, for now.** In a monorepo with, say, a .NET API and a TypeScript frontend, the
+gate runs the first stack's commands. `concordia-hook gate status` and `/concordia:init` list the other
+stacks they found; until per-folder presets arrive, write build and test commands in `concordia.json`
+that cover every part you want verified.
+
 ## Configure
 
 `concordia.json` at the repository root (or `.claude/concordia.json`) overrides the preset.
@@ -170,7 +199,8 @@ Every field is optional.
   "gate": { "enabled": true, "maxAttempts": 3, "maxOutputLines": 30, "timeoutSeconds": 600 },
   "testGuard": {                            // each list replaces the preset's; [] turns that check off
     "paths": ["**/tests/**/*.cs"],          // the files that are scanned
-    "markers": ["[Fact]", "[Theory]"],      // each occurrence counts as one test
+    "markers": ["[Fact]", "^it("],          // each occurrence counts as one test; a leading ^ only
+                                            // matches at the start of the line, so ^it( skips submit(
     "skips": ["Skip ="]                     // each occurrence counts as one skip
   }
 }
@@ -248,7 +278,7 @@ This is a text check that counts substrings. It does not read test code, and it 
   blocking, but it also means a deleted test plus an unrelated new one does not block, and removing a
   skip in one place hides adding one in another.
 - **It misses:** emptying a test body or weakening its assertions, `/* */` and `#if` around a test (only
-  `//` lines are ignored), a skip through a custom attribute, a skip that returns early or uses
+  `//` and `#` lines are ignored), a skip through a custom attribute, a skip that returns early or uses
   `Assume.That(`, an attribute split over several lines so that its text no longer matches,
   `[MemberData]` rows, excluding tests in the test command or the project file, and files outside `paths`.
 - **The agent can reach its own inputs:** `concordia.json` is in the working tree, and the gate's

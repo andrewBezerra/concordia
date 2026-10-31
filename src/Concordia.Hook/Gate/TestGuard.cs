@@ -111,8 +111,10 @@ internal static class TestGuard
         var skips = 0;
         foreach (var line in text.Split('\n'))
         {
-            // A commented-out test is a removed test. Block comments and #if are not recognized.
-            if (line.AsSpan().TrimStart().StartsWith("//", StringComparison.Ordinal)) continue;
+            // A commented-out test is a removed test: // in C#, Java, JavaScript and TypeScript, # in Python.
+            // Block comments and #if are not recognized.
+            var start = line.AsSpan().TrimStart();
+            if (start.StartsWith("//", StringComparison.Ordinal) || IsHashComment(start)) continue;
 
             tests += guard.Markers.Sum(m => Occurrences(line, m));
             skips += guard.Skips.Sum(m => Occurrences(line, m));
@@ -121,8 +123,27 @@ internal static class TestGuard
         return new TestCounts(tests, skips);
     }
 
-    private static int Occurrences(string line, string marker)
+    /// <summary>A Python comment. C# preprocessor lines (<c>#if</c>, <c>#region</c>) start with a letter and carry no markers anyway.</summary>
+    private static bool IsHashComment(ReadOnlySpan<char> start) => start.Length > 0 && start[0] == '#' && (start.Length == 1 || !char.IsLetter(start[1]));
+
+    /// <summary>
+    /// Counts a marker in one line. A marker that starts with <c>^</c> counts once when the line, without its
+    /// indentation, starts with the rest of it: <c>^it(</c> matches a test and not <c>submit(</c>. When that rest
+    /// ends in a letter or digit, the next character must not continue the name: <c>^@Test</c> skips <c>@TestFactory</c>.
+    /// </summary>
+    internal static int Occurrences(string line, string marker)
     {
+        if (marker.Length > 1 && marker[0] == '^')
+        {
+            var prefix = marker.AsSpan(1);
+            var start = line.AsSpan().TrimStart();
+            if (!start.StartsWith(prefix, StringComparison.Ordinal)) return 0;
+            if (!char.IsLetterOrDigit(prefix[^1]) || start.Length == prefix.Length) return 1;
+
+            var next = start[prefix.Length];
+            return char.IsLetterOrDigit(next) || next == '_' ? 0 : 1;
+        }
+
         var found = 0;
         for (var at = line.IndexOf(marker, StringComparison.Ordinal); at >= 0; at = line.IndexOf(marker, at + marker.Length, StringComparison.Ordinal)) found++;
         return found;

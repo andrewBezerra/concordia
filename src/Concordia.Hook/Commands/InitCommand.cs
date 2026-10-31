@@ -37,13 +37,19 @@ internal static class InitCommand
             return 0;
         }
 
-        var stack = ConfigLoader.DetectStack(repo.Root);
+        var stacks = ConfigLoader.DetectStacks(repo.Root);
+        var stack = stacks.FirstOrDefault();
         var content = stack is null ? null : Presets.ReadText(stack);
         File.WriteAllText(target, (content ?? CustomTemplate).ReplaceLineEndings("\n"));
 
         stdout.WriteLine(stack is null
             ? $"Wrote {ConfigLoader.FileName} (no known stack detected: fill in the build and test commands)."
             : $"Wrote {ConfigLoader.FileName} with the '{stack}' preset. Review the commands, protected paths and lenses.");
+        if (stacks.Count > 1)
+        {
+            stdout.WriteLine($"Also found at the root: {string.Join(", ", stacks.Skip(1))}. One preset applies per repository; " +
+                "make the build and test commands cover every part you want the gate to verify.");
+        }
         return 0;
     }
 }

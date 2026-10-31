@@ -1,0 +1,131 @@
+{
+  "stack": "python",
+  "commands": {
+    "format": "ruff format --quiet {files}",
+    "build": "",
+    "test": "python -m pytest -q -p no:cacheprovider"
+  },
+  "watch": [
+    "**/*.py",
+    "**/*.pyi",
+    "pyproject.toml",
+    "setup.py",
+    "setup.cfg",
+    "**/requirements*.txt",
+    "**/conftest.py",
+    "pytest.ini",
+    "tox.ini"
+  ],
+  "protect": [
+    "**/migrations/**",
+    "**/alembic/versions/**"
+  ],
+  "lenses": {
+    "security": {
+      "paths": [
+        "**/auth/**",
+        "**/*auth*.py",
+        "**/*token*.py",
+        "**/*password*.py",
+        "**/*crypto*.py",
+        "**/*permission*.py",
+        "**/views.py",
+        "**/views/**",
+        "**/routes/**",
+        "**/routers/**",
+        "**/api/**",
+        "**/settings.py",
+        "**/settings/**",
+        "pyproject.toml",
+        "**/requirements*.txt"
+      ],
+      "signals": [
+        "eval(",
+        "exec(",
+        "pickle.load",
+        "yaml.load(",
+        "subprocess",
+        "os.system(",
+        "shell=True",
+        ".raw(",
+        ".extra(",
+        "execute(f\"",
+        "execute(f'",
+        "mark_safe(",
+        "|safe",
+        "verify=False",
+        "hashlib.md5",
+        "hashlib.sha1",
+        "DEBUG = True",
+        "allow_origins=[\"*\"]"
+      ]
+    },
+    "performance": {
+      "paths": [
+        "**/models.py",
+        "**/models/**",
+        "**/repositories/**",
+        "**/*repository.py",
+        "**/queries/**",
+        "**/*cache*.py",
+        "**/*.sql"
+      ],
+      "signals": [
+        ".objects.all()",
+        ".objects.filter(",
+        "time.sleep(",
+        "requests.get(",
+        "requests.post(",
+        ".iterrows()",
+        "json.loads(",
+        "open("
+      ]
+    },
+    "domain": {
+      "paths": [
+        "**/domain/**",
+        "**/core/**",
+        "**/services/**",
+        "**/*service.py",
+        "**/*policy.py",
+        "**/*rule*.py",
+        "**/*validator*.py"
+      ],
+      "signals": []
+    }
+  },
+  "escalation": {
+    "maxDiffLines": 400,
+    "maxProjects": 3
+  },
+  "gate": {
+    "enabled": true,
+    "maxAttempts": 3,
+    "maxOutputLines": 30,
+    "timeoutSeconds": 600
+  },
+  "testGuard": {
+    "paths": [
+      "**/test_*.py",
+      "**/*_test.py",
+      "**/tests/**/*.py"
+    ],
+    "markers": [
+      "^def test_",
+      "^async def test_"
+    ],
+    "skips": [
+      "@pytest.mark.skip",
+      "@pytest.mark.xfail",
+      "pytest.skip(",
+      "pytest.xfail(",
+      "pytest.importorskip(",
+      "@unittest.skip",
+      "@skip(",
+      "@skipIf(",
+      "@skipUnless(",
+      "self.skipTest(",
+      "@unittest.expectedFailure"
+    ]
+  }
+}

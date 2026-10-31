@@ -26,6 +26,7 @@ internal static class ConfigLoader
 
         var preset = stack is null ? null : Presets.Load(stack);
         var merged = Merge(preset ?? new ConcordiaConfig(), user ?? new ConcordiaConfig());
+        if (stack is not null && preset is not null) StackTools.Adapt(stack, repoRoot, preset, merged);
         return Settings.From(stack ?? "custom", merged);
     }
 
@@ -34,18 +35,34 @@ internal static class ConfigLoader
         return Candidates.Select(c => Path.Combine(repoRoot, c)).FirstOrDefault(File.Exists);
     }
 
-    public static string? DetectStack(string repoRoot)
+    /// <summary>
+    /// Files at the repository root that identify a stack, in priority order: when a root has several
+    /// (a .NET solution with a package.json for tooling, say), the first stack listed here wins.
+    /// </summary>
+    internal static readonly (string Stack, string[] Markers)[] StackMarkers =
+    [
+        ("dotnet", ["*.sln", "*.slnx", "*.csproj", "*.fsproj", "global.json", "Directory.Build.props"]),
+        ("java-maven", ["pom.xml"]),
+        ("java-gradle", ["build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts"]),
+        ("python", ["pyproject.toml", "setup.py", "setup.cfg", "requirements.txt", "Pipfile"]),
+        ("node", ["package.json"]),
+    ];
+
+    /// <summary>The stack Concordia uses for this repository, or null when none is recognized.</summary>
+    public static string? DetectStack(string repoRoot) => DetectStacks(repoRoot).FirstOrDefault();
+
+    /// <summary>Every stack recognized at the root, in priority order; the first one is the one in use.</summary>
+    public static IReadOnlyList<string> DetectStacks(string repoRoot)
     {
-        string[] rootMarkers = ["*.sln", "*.slnx", "*.csproj", "*.fsproj", "global.json", "Directory.Build.props"];
-        foreach (var pattern in rootMarkers)
-        {
-            if (Directory.EnumerateFiles(repoRoot, pattern).Any()) return "dotnet";
-        }
+        var found = StackMarkers
+            .Where(s => s.Markers.Any(pattern => Directory.EnumerateFiles(repoRoot, pattern).Any()))
+            .Select(s => s.Stack)
+            .ToList();
+        if (found.Count > 0) return found;
 
+        // A .NET repository often keeps its projects one or two folders down, without a root solution.
         var nested = new EnumerationOptions { RecurseSubdirectories = true, MaxRecursionDepth = 3, IgnoreInaccessible = true };
-        if (Directory.EnumerateFiles(repoRoot, "*.csproj", nested).Any()) return "dotnet";
-
-        return null;
+        return Directory.EnumerateFiles(repoRoot, "*.csproj", nested).Any() ? ["dotnet"] : [];
     }
 
     private static ConcordiaConfig? ReadUserConfig(string repoRoot)

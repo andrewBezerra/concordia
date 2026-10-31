@@ -20,6 +20,21 @@ internal static partial class OutputSummarizer
     [GeneratedRegex(@"(?:^|\s)error\s+(?<code>[A-Z]+\d+)\s*:", RegexOptions.CultureInvariant)]
     private static partial Regex ErrorCode();
 
+    /// <summary>javac, Gradle, gcc-style and Python tools: <c>File.java:12: error: cannot find symbol</c>.</summary>
+    [GeneratedRegex(@"^\S[^:]*:\d+(?::\d+)?:\s*error:", RegexOptions.CultureInvariant)]
+    private static partial Regex ColonError();
+
+    /// <summary>A stack frame that points at a source line, in .NET, Java, Kotlin, JavaScript, TypeScript or Python.</summary>
+    [GeneratedRegex(@":line \d+|\.(?:cs|fs|java|kt|ts|tsx|js|jsx|mjs|cjs|py):\d+", RegexOptions.CultureInvariant)]
+    private static partial Regex SourceFrame();
+
+    /// <summary>Maven's closing advice, the same in every failed build and useless to the agent.</summary>
+    private static readonly string[] MavenNoise =
+    [
+        "[ERROR] -> [Help", "[ERROR] Re-run Maven", "[ERROR] To see the full stack trace", "[ERROR] For more information",
+        "[ERROR] Failed to execute goal", "[ERROR] After correcting the problems", "[ERROR] mvn <args>",
+    ];
+
     public static string Summarize(string output, string repoRoot, int maxLines)
     {
         var lines = output.Replace("\r\n", "\n").Split('\n');
@@ -36,6 +51,7 @@ internal static partial class OutputSummarizer
 
         var capture = 0;
         var stackFrameAdded = false;
+        var blankLinesInside = false;
 
         foreach (var raw in lines)
         {
@@ -58,6 +74,9 @@ internal static partial class OutputSummarizer
                 Add(trimmed, dedupe: true);
                 capture = LinesAfterFailure;
                 stackFrameAdded = false;
+
+                // Jest separates the name, the message and the frames with blank lines; other runners end a block with one.
+                blankLinesInside = trimmed.StartsWith("● ", StringComparison.Ordinal);
                 continue;
             }
 
@@ -65,7 +84,7 @@ internal static partial class OutputSummarizer
             {
                 if (trimmed.Length == 0)
                 {
-                    capture = 0;
+                    if (!blankLinesInside) capture = 0;
                     continue;
                 }
 
@@ -74,8 +93,8 @@ internal static partial class OutputSummarizer
 
                 if (trimmed.StartsWith("at ", StringComparison.Ordinal))
                 {
-                    // Keep only the first frame that points at a source line: it is where the failure is.
-                    if (!stackFrameAdded && trimmed.Contains(":line ", StringComparison.Ordinal))
+                    // Keep only the first frame that points at a source line outside dependencies: it is where the failure is.
+                    if (!stackFrameAdded && SourceFrame().IsMatch(trimmed) && !trimmed.Contains("node_modules", StringComparison.Ordinal))
                     {
                         Add("  " + trimmed, dedupe: false);
                         stackFrameAdded = true;
@@ -88,7 +107,7 @@ internal static partial class OutputSummarizer
                 continue;
             }
 
-            if (GenericError().IsMatch(trimmed)) Add(trimmed, dedupe: true);
+            if (GenericError().IsMatch(trimmed) || ColonError().IsMatch(trimmed) || IsMavenError(trimmed)) Add(trimmed, dedupe: true);
         }
 
         if (picked.Count == 0)
@@ -123,10 +142,27 @@ internal static partial class OutputSummarizer
         return locked;
     }
 
+    /// <summary>
+    /// The line that names a failed test: VSTest and Microsoft.Testing.Platform (<c>Failed</c>/<c>failed</c>), xUnit
+    /// (<c>[FAIL]</c>), pytest (<c>FAILED</c>, <c>ERROR</c> for collection errors), Jest and Vitest (<c>●</c>, <c>×</c>,
+    /// <c>FAIL</c>) and Gradle (<c>... FAILED</c> at the end).
+    /// </summary>
     private static bool IsFailureHeader(string line) =>
         line.StartsWith("Failed ", StringComparison.Ordinal)
         || line.StartsWith("failed ", StringComparison.Ordinal)
-        || line.Contains("[FAIL]", StringComparison.Ordinal);
+        || line.Contains("[FAIL]", StringComparison.Ordinal)
+        || line.StartsWith("FAILED ", StringComparison.Ordinal)
+        || line.StartsWith("ERROR ", StringComparison.Ordinal)
+        || line.StartsWith("FAIL ", StringComparison.Ordinal)
+        || line.StartsWith("● ", StringComparison.Ordinal)
+        || line.StartsWith("× ", StringComparison.Ordinal)
+        || (line.EndsWith(" FAILED", StringComparison.Ordinal) && line.Contains(" > ", StringComparison.Ordinal));
+
+    /// <summary>A Maven <c>[ERROR]</c> line with content: compiler errors and failed assertions, without the closing advice.</summary>
+    private static bool IsMavenError(string line) =>
+        line.StartsWith("[ERROR] ", StringComparison.Ordinal)
+        && line.Length > "[ERROR] ".Length
+        && !MavenNoise.Any(noise => line.StartsWith(noise, StringComparison.Ordinal));
 
     private static string Shorten(string line, string repoRoot)
     {
