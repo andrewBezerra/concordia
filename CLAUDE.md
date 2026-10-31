@@ -6,11 +6,13 @@ Claude Code plugin for verified agent orchestration. Everything in this reposito
 - `src/Concordia.Hook/` — the `concordia-hook` binary (C#, .NET 10, Native AOT). Entry: `Cli.cs`; one class per command in `Commands/`
 - `tests/Concordia.Hook.Tests/` — xUnit tests; `GateIntegrationTests` needs `git` on PATH
 - `plugins/concordia/` — the plugin: manifest, hooks, skills, agents, launcher scripts in `bin/`
+- `plugins/concordia/hooks/panel/` — the panel, a Claude Code mod: `register.tsx` holds every hook and everything that touches `$` (the engine refuses `$` across an import), the other files are plain functions; tests in `plugins/concordia/tests/`
 - `benchmark/` — sample app, tasks with hidden tests, runner (`runner/run.cs`)
 - `.github/workflows/build.yml` — tests, AOT matrix, `dist` branch publishing
 
 ## Commands
 - Test: `dotnet test Concordia.slnx`
+- Panel: `claude plugin test plugins/concordia` and `claude plugin validate plugins/concordia`
 - Local plugin build: `build/publish-local.sh` then `claude --plugin-dir plugins/concordia`
 - Benchmark sanity: `benchmark/scripts/sanity.sh`
 

@@ -15,11 +15,26 @@ unavoidable, keeps the process proportional to the task, and measures the result
   escalate to one more lens when it sees something outside its own.
 - **Measured.** The repository includes a benchmark with small and large tasks and hidden acceptance
   tests that compares Claude Code alone, Concordia and Superpowers. Results are pending.
+- **A panel beside the session.** Subagents with their real progress, the pull request's CI with links
+  to what failed, the mean CI time with tips, and the tokens per prompt. It opens by itself.
 
 The hooks are a single native binary (C#, Native AOT): a few milliseconds per call and nothing to
-install besides Claude Code. A .NET preset ships built in; other stacks work through `concordia.json`.
+install besides Claude Code (2.1.287 or later for the panel; `gh` is optional, for its CI card). A .NET preset ships built in; other stacks work through `concordia.json`.
 
-> Status: early (0.1). The benchmark numbers will be published in this README once collected.
+> Status: early (0.3). The benchmark numbers will be published in this README once collected.
+
+## What's new in 0.3
+
+- **[The panel](#the-panel)** opens by itself when a session starts, with three cards: Agents, Pull request CI and
+  Tokens per prompt. Close it and it stays closed until `/concordia-panel`.
+- **Agents:** each subagent's status, model and time, a percentage only when the agent reports one, and a screen with what
+  it said and the tools it called.
+- **Pull request CI:** the checks of the current branch, links to each failed job and to the checks page, the mean CI time
+  per project, and tips drawn from the numbers of its runs.
+- **Tokens per prompt:** the last prompt against the mean of the last 20, and what to change to spend less.
+- **New commands:** `/concordia-panel`, `/concordia-ci`, `/concordia-tokens`, `/concordia-agents` and `/concordia-agent`.
+
+Headless runs and the gate work as before, except that `claude -p` runs now also count in the token history.
 
 ## Install
 
@@ -41,6 +56,11 @@ Then, in each repository:
 | `/concordia:feature <request>` | Triage (small, medium or large), then the matching pipeline: tests, implementation, review |
 | `/concordia:fix <bug>` | Reproduce with a failing test, fix the root cause, prove it |
 | `/concordia:init` | Write `concordia.json` for the detected stack and check the commands |
+| `/concordia-panel` | Open the panel, and undo having closed it |
+| `/concordia-ci` | The CI of the current branch's pull request, check by check |
+| `/concordia-tokens [clear]` | The tokens of the last 20 prompts, the mean and what to change; `clear` resets it |
+| `/concordia-agents` | The subagents and background sessions, with their progress |
+| `/concordia-agent <id>` | One subagent's screen: what it said and the tools it called |
 
 The gate works in every session, with or without these commands: whenever the agent changed code,
 it must leave the build and tests green before it stops. Files that were already dirty when the
@@ -55,6 +75,45 @@ gate's own message says what happened. The gate also runs when the agent stops t
 something, and it cannot tell a question from a finished report. A question asked while the
 session's own tests are red is blocked like any other stop, on purpose, so the agent should ask
 before making tests red, or finish the step first.
+
+## The panel
+
+A pane with three cards, updating by itself: **Agents**, **Pull request CI** and **Tokens per prompt**. It needs
+Claude Code 2.1.287 or later, and works with or without a `concordia.json`. The status line shows CI and tokens together.
+
+Headless runs (`claude -p`) get the commands only: no timers, no `gh` calls, no panel.
+
+It opens by itself when a session starts, on a timer, so it never delays the first prompt. Claude Code only places a pane
+nobody asked for from 144 terminal columns (110 once you have opened it yourself). Below that you get one short toast per
+session saying to type `/concordia-panel`. Close the pane and it stays closed in later sessions, on every project,
+until you type `/concordia-panel` again.
+
+Those commands use a `concordia-` prefix rather than `/concordia:panel`: a command registered at run time can only have
+letters, digits, `_` and `-` in its name.
+
+**CI.** The card follows the current branch's pull request through the GitHub CLI, with a link to each failed job and then
+to the checks page, plus the mean CI time of the current repository and tips drawn only from the numbers of its runs, and
+the means of up to 3 other projects. A toast says when a running CI ends. It asks `gh` every 30 s, and every 5 minutes once
+CI has finished or `gh` fails, keeping the last state on screen through a failure. `gh` is optional: without it, outside a repository, with no GitHub remote or when it is not
+logged in, the card says what is missing and everything else keeps working.
+
+**Tokens.** Each prompt is counted with the subagents it opened. The weights compare prompts with each other; they are an
+approximation of the price tables, not a bill. The history is kept across sessions and projects, in Claude Code's plugin store. Of each prompt's text, only the first 40
+characters are stored, whitespace collapsed; those can still hold whatever you typed. `/concordia-tokens clear` deletes it.
+
+**Agent progress.** The panel shows each subagent's status, model and time. A percentage appears only if the agent writes
+one: **the panel never invents progress**, from the status or the elapsed time or anything else. To report progress, have
+the agent write this file, and rewrite it after each finished item. A file older than the agent is ignored, as another
+run's, and so is any file when the panel did not see the agent start:
+
+```text
+~/.claude/concordia/agent-progress/<slug>.json
+{ "done": 34, "total": 89, "step": "S1192" }
+```
+
+`<slug>` is the description of the agent's call, without accents, in lowercase, with anything but letters and digits turned
+into `-`: "Fix the Sonar findings" becomes `fix-the-sonar-findings.json`. `step` is optional. `feitos` and `etapa` are read
+as `done` and `step`. Without a known total, write no file: the agent then shows its status and time, and no number.
 
 ## How it works
 
@@ -83,6 +142,7 @@ Components:
 | `feature`, `fix`, `init` | Skills | Orchestration playbooks |
 | `planner`, `test-author`, `reviewer` | Subagents | Plan, write failing tests, review one lens |
 | `concordia-hook` | Native binary | Hooks, review pack, gate control |
+| `hooks/panel` | Mod (TypeScript, run by Claude Code) | The panel, its commands and the status line |
 
 ## Configure
 
