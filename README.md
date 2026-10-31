@@ -2,6 +2,11 @@
 
 **Agent orchestration for Claude Code that proves what it ships.**
 
+<p align="center">
+  <img src="docs/concordia-flow.svg" width="960"
+       alt="How Concordia works: a feature request is triaged as large, tests are written first and fail, an edit to a committed migration is blocked, the gate finds a failing test and sends it back to the agent, the agent fixes it and the gate turns green, review lenses are chosen by rule, and the task is done.">
+</p>
+
 Most orchestration plugins ask the agent to test and review its work. Concordia makes it
 unavoidable, keeps the process proportional to the task, and measures the result.
 
