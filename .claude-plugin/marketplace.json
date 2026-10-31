@@ -13,7 +13,7 @@
       "description": "Verification gates enforced by hooks, a process sized to the task, and risk-based review lenses. .NET preset included.",
       "source": {
         "source": "git-subdir",
-        "url": "andrewBezerra/concordia",
+        "url": "https://github.com/andrewBezerra/concordia.git",
         "path": "plugins/concordia",
         "ref": "dist"
       },
