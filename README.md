@@ -15,11 +15,26 @@ unavoidable, keeps the process proportional to the task, and measures the result
   escalate to one more lens when it sees something outside its own.
 - **Measured.** The repository includes a benchmark with small and large tasks and hidden acceptance
   tests that compares Claude Code alone, Concordia and Superpowers. Results are pending.
+- **A panel beside the session.** Subagents with their real progress, the pull request's CI with links
+  to what failed, the mean CI time with tips, and the tokens per prompt. It opens by itself.
 
 The hooks are a single native binary (C#, Native AOT): a few milliseconds per call and nothing to
 install besides Claude Code (2.1.287 or later for the panel; `gh` is optional, for its CI card). A .NET preset ships built in; other stacks work through `concordia.json`.
 
-> Status: early (0.1). The benchmark numbers will be published in this README once collected.
+> Status: early (0.3). The benchmark numbers will be published in this README once collected.
+
+## What's new in 0.3
+
+- **[The panel](#the-panel)** opens by itself when a session starts, with three cards: Agents, Pull request CI and
+  Tokens per prompt. Close it and it stays closed until `/concordia-panel`.
+- **Agents:** each subagent's status, model and time, a percentage only when the agent reports one, and a screen with what
+  it said and the tools it called.
+- **Pull request CI:** the checks of the current branch, links to each failed job and to the checks page, the mean CI time
+  per project, and tips drawn from the numbers of its runs.
+- **Tokens per prompt:** the last prompt against the mean of the last 20, and what to change to spend less.
+- **New commands:** `/concordia-panel`, `/concordia-ci`, `/concordia-tokens`, `/concordia-agents` and `/concordia-agent`.
+
+Headless runs and the gate work as before, except that `claude -p` runs now also count in the token history.
 
 ## Install
 
