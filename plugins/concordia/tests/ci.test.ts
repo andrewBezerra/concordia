@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { explainGhFailure, explainGhStartFailure, isFinished, statusLine, summarize } from '../hooks/panel/ci-state'
-import { mainWorkflow, measure, remember, type Run, type RunWithJobs } from '../hooks/panel/ci-times'
+import { ciPollIsDue, explainGhFailure, explainGhStartFailure, isFinished, statusLine, summarize } from '../hooks/panel/ci-state'
+import { mainWorkflow, measure, needsMeasuring, remember, type Run, type RunWithJobs } from '../hooks/panel/ci-times'
 
 describe('the CI summary', () => {
   test('counts the passed and the running, and says how many passed', () => {
@@ -120,4 +120,38 @@ describe('the mean CI time', () => {
     const t = (project: string, meanMs: number) => ({ project, workflow: 'CI', meanMs, samples: 1, tips: [], measuredAt: 0 })
     expect(remember([t('a', 1), t('b', 2)], t('b', 3))).toEqual([t('b', 3), t('a', 1)])
   })
+})
+
+test('a failure link is kept only over https', () => {
+  const s = summarize(
+    1,
+    [
+      { name: 'a', status: 'COMPLETED', conclusion: 'FAILURE', detailsUrl: 'javascript:alert(1)' },
+      { name: 'b', status: 'COMPLETED', conclusion: 'FAILURE', detailsUrl: 'http://x/1' },
+      { name: 'c', status: 'COMPLETED', conclusion: 'FAILURE', detailsUrl: 'not a url' },
+      { name: 'd', status: 'COMPLETED', conclusion: 'FAILURE', detailsUrl: 'https://x/2' },
+    ],
+    'file:///etc/passwd',
+  )
+  expect(s.failures).toEqual(['a', 'b', 'c', 'd'])
+  expect(s.failureLinks).toEqual([{ name: 'd', url: 'https://x/2' }])
+  expect(s.url).toBeUndefined()
+})
+
+test('polling is due every time while CI runs, and after 5 minutes with a problem or once finished', () => {
+  const running = summarize(1, [{ name: 'a', status: 'IN_PROGRESS' }])
+  const finished = summarize(1, [{ name: 'a', status: 'COMPLETED', conclusion: 'SUCCESS' }])
+  expect(ciPollIsDue(running, null, 1_000, 1_000)).toBe(true)
+  expect(ciPollIsDue(null, null, 1_000, 1_000)).toBe(true)
+  expect(ciPollIsDue(finished, null, 0, 299_999)).toBe(false)
+  expect(ciPollIsDue(finished, null, 0, 300_000)).toBe(true)
+  expect(ciPollIsDue(null, 'no gh', 0, 299_999)).toBe(false)
+  expect(ciPollIsDue(running, 'no gh', 0, 300_000)).toBe(true)
+})
+
+test('a project is measured when missing or older than the period', () => {
+  const t = { project: 'o/r', workflow: 'CI', meanMs: 1, samples: 1, tips: [], measuredAt: 1_000 }
+  expect(needsMeasuring([t], 'o/r', 1_999, 1_000)).toBe(false)
+  expect(needsMeasuring([t], 'o/r', 2_000, 1_000)).toBe(true)
+  expect(needsMeasuring([t], 'o/other', 1_001, 1_000)).toBe(true)
 })

@@ -119,6 +119,12 @@ export function measure(project: string, runs: readonly Run[], detailed: readonl
   return { project, ...main, tips: tips.filter((t): t is string => t !== undefined), measuredAt: now }
 }
 
+/** Whether the project's measure is missing or older than the period. */
+export function needsMeasuring(list: readonly ProjectCiTime[], project: string, now: number, periodMs: number): boolean {
+  const kept = list.find(t => t.project === project)
+  return !kept || now - kept.measuredAt >= periodMs
+}
+
 /** The list per project: the new measure replaces the project's old one, and the current project comes first. */
 export function remember(list: readonly ProjectCiTime[], fresh: ProjectCiTime): ProjectCiTime[] {
   return [fresh, ...list.filter(t => t.project !== fresh.project)]

@@ -15,9 +15,18 @@ export type Check = {
 
 const OK = new Set(['SUCCESS', 'SKIPPED', 'NEUTRAL'])
 
+// These URLs come from whatever posted the status, and they become links on the screen.
+const isHttps = (url: string) => {
+  try {
+    return new URL(url).protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
 /** Sums the checks up: how many passed, how many run, and the name and link of those that failed. */
 export function summarize(pr: number, checks: readonly Check[], prUrl?: string): CiState {
-  const state: CiState = { pr, total: checks.length, passed: 0, running: 0, failures: [], failureLinks: [], ...(prUrl ? { url: `${prUrl}/checks` } : {}) }
+  const state: CiState = { pr, total: checks.length, passed: 0, running: 0, failures: [], failureLinks: [], ...(prUrl && isHttps(prUrl) ? { url: `${prUrl}/checks` } : {}) }
   for (const c of checks) {
     const name = c.name ?? c.context ?? '?'
     const end = c.conclusion ?? (c.state === 'PENDING' || c.state === 'EXPECTED' ? undefined : c.state)
@@ -27,13 +36,21 @@ export function summarize(pr: number, checks: readonly Check[], prUrl?: string):
     else {
       state.failures.push(name)
       const url = c.detailsUrl ?? c.targetUrl
-      if (url) state.failureLinks.push({ name, url })
+      if (url && isHttps(url)) state.failureLinks.push({ name, url })
     }
   }
   return state
 }
 
 export const isFinished = (s: CiState) => s.total > 0 && s.running === 0
+
+const BACKOFF_MS = 5 * 60_000
+
+/** With a problem, or CI finished, nothing is likely to change soon: gh is asked every 5 minutes instead of every 30 s. */
+export function ciPollIsDue(state: CiState | null, problem: string | null, lastAttemptAt: number, now: number): boolean {
+  const isQuiet = problem !== null || (state !== null && isFinished(state))
+  return !isQuiet || now - lastAttemptAt >= BACKOFF_MS
+}
 
 /** The status line: `PR #65 · CI 3/5 ✓`, `PR #65 · CI green ✓`, `PR #65 · CI failed ✗ Build & test`. */
 export function statusLine(s: CiState): string {

@@ -48,28 +48,34 @@ export function elapsed(ms: number): string {
   return m > 0 ? `${m} min ${String(s % 60).padStart(2, '0')} s` : `${s} s`
 }
 
-/** The mean time of each project measured, and the tips of the current one, first on the list. */
-function timeLines(times: readonly ProjectCiTime[]): CardLine[] {
-  const means = times.map<CardLine>(t => ({
+const OTHER_PROJECTS = 3
+
+/** The current project's mean and tips, matched by name; then the means of up to 3 others, labelled by name. */
+function timeLines(times: readonly ProjectCiTime[], project: string | null): CardLine[] {
+  const current = times.find(t => t.project === project)
+  const others = times.filter(t => t !== current).slice(0, OTHER_PROJECTS)
+  const means = [...(current ? [current] : []), ...others].map<CardLine>(t => ({
     tone: 'neutral',
     text: `Mean time of ${projectName(t.project)}: ${elapsed(t.meanMs)}`,
     detail: `${t.workflow}, ${plural(t.samples, 'run', 'runs')} · measured at ${clockTime(t.measuredAt)}`,
   }))
-  const tips = (times[0]?.tips ?? []).map<CardLine>(text => ({ tone: 'attention', text }))
+  const tips = (current?.tips ?? []).map<CardLine>(text => ({ tone: 'attention', text }))
   return [...means, ...tips]
 }
 
 /** The CI card: the branch's PR, whether checks run, passed or failed, the mean time and tips; or what is missing. */
-export function ciCard(state: CiState | null, checkedAt: number, times: readonly ProjectCiTime[] = [], problem: string | null = null): Card {
+export function ciCard(state: CiState | null, checkedAt: number, times: readonly ProjectCiTime[] = [], problem: string | null = null, project: string | null = null): Card {
   const card = prCard(state, checkedAt, problem)
-  return { ...card, lines: [...card.lines, ...timeLines(times)] }
+  return { ...card, lines: [...card.lines, ...timeLines(times, project)] }
 }
 
 function prCard(state: CiState | null, checkedAt: number, problem: string | null): Card {
   const base = { title: 'Pull request CI', role: "Follows the GitHub checks of the current branch's pull request." }
-  const when = checkedAt > 0 ? `checked at ${clockTime(checkedAt)}` : undefined
+  const checked = checkedAt > 0 ? `checked at ${clockTime(checkedAt)}` : undefined
+  // A state kept through a failed look says so beside its time.
+  const when = state && problem ? `${checked} · refresh failed: ${problem}` : checked
   if (checkedAt === 0) return { ...base, tone: 'neutral', lines: [{ tone: 'neutral', text: 'Checking CI…' }] }
-  if (problem) return { ...base, tone: 'neutral', lines: [{ tone: 'neutral', text: problem, detail: when }] }
+  if (problem && !state) return { ...base, tone: 'neutral', lines: [{ tone: 'neutral', text: problem, detail: when }] }
   if (!state) return { ...base, tone: 'neutral', lines: [{ tone: 'neutral', text: 'No open pull request on this branch.', detail: when }] }
   const pr = `PR #${state.pr}`
   const links: CardLink[] = state.url ? [{ label: 'open the PR checks ›', href: state.url }] : []

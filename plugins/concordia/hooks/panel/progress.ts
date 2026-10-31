@@ -19,3 +19,12 @@ export function parseProgress(text: string): AgentProgress | undefined {
   if (typeof done !== 'number' || typeof raw.total !== 'number' || raw.total <= 0) return undefined
   return { done, total: raw.total, step: typeof step === 'string' ? step : undefined }
 }
+
+/** The progress file of a description, or undefined when nothing of it makes a name. */
+export function progressFileName(description: string): string | undefined {
+  const name = slug(description)
+  return name ? `${name}.json` : undefined
+}
+
+/** A file written before the agent started is another run's. */
+export const isCurrentProgress = (mtimeMs: number, startedAt: number) => mtimeMs >= startedAt

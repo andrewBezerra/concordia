@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 
-import { suggestions, summarizeTokens, tokensReport, type PromptRecord } from '../hooks/panel/tokens-stats'
+import { promptExcerpt, suggestions, summarizeTokens, tokensReport, type PromptRecord } from '../hooks/panel/tokens-stats'
 
 const usage = (input: number, read: number, written: number, output: number) => ({
   input_tokens: input,
@@ -73,4 +73,24 @@ test('the card summary: null without prompts, and the last against the mean with
   expect(summary.aboveMean).toBe(true)
   expect(summary.context).toBe(180_000)
   expect(summary.tip).toContain('/clear')
+})
+
+test('only a 40-character excerpt of the prompt is stored', async ($, on) => {
+  const stored: any = {}
+  on('store.get', (): any => ({ value: undefined }))
+  on('store.set', (_$: any, e: any): any => ((stored[e.key] = e.value), { value: undefined }))
+  on('ui.status', () => ({ value: undefined }))
+  on('turn.start', (_$: any, e: any) => ({ turnId: e.turnId }))
+  on('turn.complete', (_$: any, e: any) => ({ text: e.answer, usage: e.usage }))
+  await onePrompt($, 't1', 'a  secret\n' + 'x'.repeat(100))
+  expect(stored['tokens-history'][0].prompt).toBe(('a secret ' + 'x'.repeat(100)).slice(0, 40))
+})
+
+test('the excerpt collapses whitespace, and the short prompt rule still tells short from long', () => {
+  expect(promptExcerpt('  a \n\t b  ')).toBe('a b')
+  const costly = (prompt: string) => record({ prompt: promptExcerpt(prompt), cacheRead: 900_000 })
+  const cheap = record({ prompt: 'x'.repeat(40), input: 0, cacheRead: 0, cacheWritten: 0, output: 0 })
+  const many = [cheap, cheap, cheap, cheap, cheap, cheap]
+  expect(suggestions([...many, costly('short'), costly('also short')]).some(s => s.includes('short prompts'))).toBe(true)
+  expect(suggestions([...many, costly('y'.repeat(200)), costly('z'.repeat(200))]).some(s => s.includes('short prompts'))).toBe(false)
 })

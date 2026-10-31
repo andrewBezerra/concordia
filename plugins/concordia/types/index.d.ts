@@ -64,6 +64,8 @@ declare module 'claude-code' {
       ciProblem: string | null
       ciCheckedAt: number
       ciTimes: ProjectCiTime[]
+      /** The current repository's nameWithOwner, when gh gave it. */
+      ciProject: string | null
       tokensSummary: TokensSummary | null
       statusCi: string | null
       statusTokens: string | null

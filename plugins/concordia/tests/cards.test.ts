@@ -28,12 +28,23 @@ describe('the panel cards', () => {
     ])
   })
 
-  test('the mean time of each project, and the tips of the current one only', () => {
-    const time = (project: string, tips: string[]) => ({ project, workflow: 'CI', meanMs: 185_000, samples: 18, tips, measuredAt: at1405 })
-    const card = ciCard(pr({}), at1405, [time('o/current', ['Tip of the current.']), time('o/other', ['Tip of the other.'])])
+  const time = (project: string, tips: string[] = []) => ({ project, workflow: 'CI', meanMs: 185_000, samples: 18, tips, measuredAt: at1405 })
+
+  test('the current project first with its tips, by name, and up to 3 other means', () => {
+    const list = [time('o/a', ['Tip of a.']), time('o/current', ['Tip of the current.']), time('o/b'), time('o/c'), time('o/d')]
+    const card = ciCard(pr({}), at1405, list, null, 'o/current')
     expect(card.tone).toBe('ok')
-    expect(card.lines.map(l => l.text)).toEqual(['PR #65: all green (5 checks).', 'Mean time of current: 3 min 05 s', 'Mean time of other: 3 min 05 s', 'Tip of the current.'])
+    expect(card.lines.map(l => l.text)).toEqual(['PR #65: all green (5 checks).', 'Mean time of current: 3 min 05 s', 'Mean time of a: 3 min 05 s', 'Mean time of b: 3 min 05 s', 'Mean time of c: 3 min 05 s', 'Tip of the current.'])
     expect(card.lines[1]?.detail).toBe('CI, 18 runs · measured at 14:05')
+  })
+
+  test('with no matching project, other means and no tips', () => {
+    const texts = ciCard(pr({}), at1405, [time('o/a', ['Tip of a.'])], null, null).lines.map(l => l.text)
+    expect(texts).toEqual(['PR #65: all green (5 checks).', 'Mean time of a: 3 min 05 s'])
+  })
+
+  test('a kept state shows the failed refresh as its detail', () => {
+    expect(ciCard(pr({}), at1405, [], 'gh could not run.').lines[0]).toMatchObject({ text: 'PR #65: all green (5 checks).', detail: 'checked at 14:05 · refresh failed: gh could not run.' })
   })
 
   test('tokens: the last against the mean, attention above it, and the first suggestion', () => {

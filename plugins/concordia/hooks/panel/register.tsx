@@ -4,13 +4,13 @@ import type { EngineInterface, On, Register } from 'claude-code'
 import type { AgentBirth, AgentProgress, AgentRow, BackgroundSession, CiState, ConversationLine, ProjectCiTime, TokensSummary } from '../../types'
 
 import { agentsCard, bar, ciCard, elapsed, FINISHED, STATUS_NAME, SYMBOL, tokensCard, type Card, type Tone } from './cards'
-import { explainGhFailure, explainGhStartFailure, isFinished, statusLine, summarize, type Check } from './ci-state'
-import { mainWorkflow, measure, remember, type Job, type Run, type RunWithJobs } from './ci-times'
+import { ciPollIsDue, explainGhFailure, explainGhStartFailure, isFinished, statusLine, summarize, type Check } from './ci-state'
+import { mainWorkflow, measure, needsMeasuring, remember, type Job, type Run, type RunWithJobs } from './ci-times'
 import { conversationLines, SCREEN_LINES } from './conversation'
-import { parseProgress, slug } from './progress'
-import { safely } from './safely'
+import { isCurrentProgress, parseProgress, progressFileName } from './progress'
+import { exclusive, safely } from './safely'
 import { composeStatus } from './status'
-import { add, summarizeTokens, tokensReport, tokensStatusLine, total, WINDOW, zero, type PartialRecord, type PromptRecord } from './tokens-stats'
+import { add, promptExcerpt, summarizeTokens, tokensReport, tokensStatusLine, total, WINDOW, zero, type PartialRecord, type PromptRecord } from './tokens-stats'
 
 // The one hooks module of the plugin. The command hooks in hooks.json are the gate; this is the panel. Everything that
 // touches $ is in this file, because the engine refuses a module that passes $ across an import: the other files here
@@ -58,9 +58,15 @@ async function progressFolder($: EngineInterface): Promise<string | undefined> {
   return home ? `${home}/.claude/concordia/agent-progress` : undefined
 }
 
-async function readProgress($: EngineInterface, folder: string, description: string): Promise<AgentProgress | undefined> {
+// A file older than the agent is another run's, left under the same description. Without a start time there is no way
+// to tell, so no progress shows rather than perhaps a stale one.
+async function readProgress($: EngineInterface, folder: string, description: string, startedAt: number | undefined): Promise<AgentProgress | undefined> {
+  const name = progressFileName(description)
+  if (!name || startedAt === undefined) return undefined
   try {
-    return parseProgress(await $.fs.read(`${folder}/${slug(description)}.json`))
+    const path = `${folder}/${name}`
+    if (!isCurrentProgress((await $.fs.stat(path)).mtimeMs, startedAt)) return undefined
+    return parseProgress(await $.fs.read(path))
   } catch {
     return undefined
   }
@@ -70,16 +76,19 @@ async function refreshAgents($: EngineInterface): Promise<void> {
   const list = await $.agent.list()
   const known = await read($, births)
   const folder = await progressFolder($)
+  const shown = await read($, agents)
   const rows: AgentRow[] = []
   for (const a of list) {
     const birth = known[a.id]
+    // A finished agent writes nothing more: its last progress stands.
+    const last = shown.find(row => row.id === a.id)?.progress
     rows.push({
       id: a.id,
       description: a.description,
       status: a.status,
       model: birth?.model,
       startedAt: birth?.startedAt,
-      progress: folder ? await readProgress($, folder, a.description) : undefined,
+      progress: FINISHED.has(a.status) ? last : folder ? await readProgress($, folder, a.description, birth?.startedAt) : undefined,
     })
   }
   await update($, agents, () => rows)
@@ -136,16 +145,22 @@ async function refreshSessions($: EngineInterface): Promise<void> {
   }
 }
 
+// The panel's card reads the agents too, so it counts as much as the two agent panes. Nothing open, nothing to read.
+async function refreshAgentsIfShown($: EngineInterface): Promise<void> {
+  if ((await $.ui.panes()).some(p => p.id === PANE || p.id === AGENTS_PANE || p.id === AGENT_SCREEN)) await refreshAgents($)
+}
+
 // Spawning `claude agents` costs a process, so it only runs while the pane that shows its answer is open.
 async function refreshSessionsIfShown($: EngineInterface): Promise<void> {
   if ((await $.ui.panes()).some(p => p.id === AGENTS_PANE)) await refreshSessions($)
 }
 
-async function startAgents($: EngineInterface): Promise<void> {
+async function startAgents($: EngineInterface, isInteractive: boolean): Promise<void> {
   await $.command.register({ name: 'concordia-agents', description: 'Open the view of the subagents and background sessions, with their progress.' })
   await $.command.register({ name: 'concordia-agent', description: 'Open the screen of one subagent, by id, with what it is doing.', argumentHint: '<id>' })
-  $.clock.every(AGENTS_PERIOD_MS, safely(() => refreshAgents($)))
-  $.clock.every(SESSIONS_PERIOD_MS, safely(() => refreshSessionsIfShown($)))
+  if (!isInteractive) return
+  $.clock.every(AGENTS_PERIOD_MS, exclusive(safely(() => refreshAgentsIfShown($))))
+  $.clock.every(SESSIONS_PERIOD_MS, exclusive(safely(() => refreshSessionsIfShown($))))
 }
 
 function registerAgents(on: On): void {
@@ -153,11 +168,13 @@ function registerAgents(on: On): void {
   // and nothing after it throws: the panel never stops or repeats an agent's start. No .catch for the same reason: one
   // that called next again could start the agent twice.
   on('agent.spawn', async ($, e, next) => {
+    // Before next: the agent can write its first progress file before next resolves.
+    const startedAt = Date.now()
     const started = await next(e)
     try {
       if (started && !started.deny && started.agentId) {
         const id = started.agentId
-        await update($, births, current => ({ ...current, [id]: { model: started.model, startedAt: Date.now() } }))
+        await update($, births, current => ({ ...current, [id]: { model: started.model, startedAt } }))
       }
     } catch {
       // Without the model and the time, the agent shows with its status alone.
@@ -258,30 +275,50 @@ const ciState = atom({ plugin: 'concordia', key: 'ciState' } as const, null as C
 const ciProblem = atom({ plugin: 'concordia', key: 'ciProblem' } as const, null as string | null)
 const ciCheckedAt = atom({ plugin: 'concordia', key: 'ciCheckedAt' } as const, 0)
 const ciTimes = atom({ plugin: 'concordia', key: 'ciTimes' } as const, [] as ProjectCiTime[])
+const ciProject = atom({ plugin: 'concordia', key: 'ciProject' } as const, null as string | null)
 
-type Lookup = { state: CiState | null; problem: string | null }
+// The last time gh was asked, answered or not: the backoff counts from it.
+let lastAttemptAt = 0
+
+// `no-pr` is the one definite answer that clears what is known. A failure may be the network for a moment.
+type Lookup = { kind: 'pr'; state: CiState } | { kind: 'no-pr' } | { kind: 'problem'; problem: string }
 
 async function lookUp($: EngineInterface): Promise<Lookup> {
   try {
     const r = await $.process.run(['gh', 'pr', 'view', '--json', 'number,url,statusCheckRollup'], { timeoutMs: 20_000 })
-    if (r.exitCode !== 0) return { state: null, problem: explainGhFailure(r.stderr) }
+    if (r.exitCode !== 0) {
+      const problem = explainGhFailure(r.stderr)
+      return problem === null ? { kind: 'no-pr' } : { kind: 'problem', problem }
+    }
     const pr = JSON.parse(r.stdout) as { number: number; url?: string; statusCheckRollup?: Check[] }
-    return { state: summarize(pr.number, pr.statusCheckRollup ?? [], pr.url), problem: null }
+    return { kind: 'pr', state: summarize(pr.number, pr.statusCheckRollup ?? [], pr.url) }
   } catch (error) {
-    return { state: null, problem: explainGhStartFailure(error) }
+    return { kind: 'problem', problem: explainGhStartFailure(error) }
   }
 }
 
 async function refreshCi($: EngineInterface): Promise<void> {
-  const { state, problem } = await lookUp($)
+  lastAttemptAt = await $.clock.now()
+  const found = await lookUp($)
+  if (found.kind === 'problem') {
+    // The last state stays, with the time it was really checked; the card shows the problem beside it.
+    await update($, ciProblem, () => found.problem)
+    if ((await read($, ciState)) === null) await update($, ciCheckedAt, () => Date.now())
+    return
+  }
+  const state = found.kind === 'pr' ? found.state : null
   await setStatus($, 'ci', state ? statusLine(state) : undefined)
   await update($, ciState, () => state)
-  await update($, ciProblem, () => problem)
+  await update($, ciProblem, () => null)
   await update($, ciCheckedAt, () => Date.now())
   // Only when the same PR goes from running to finished: not on every look, nor when the session opens.
   if (state && previous && previous.pr === state.pr && !isFinished(previous) && isFinished(state))
     $.ui.toast(state.failures.length > 0 ? `PR #${state.pr}: CI failed in ${state.failures.join(', ')}` : `PR #${state.pr}: CI green`)
   previous = state ?? undefined
+}
+
+async function refreshCiIfDue($: EngineInterface): Promise<void> {
+  if (ciPollIsDue(await read($, ciState), await read($, ciProblem), lastAttemptAt, await $.clock.now())) await refreshCi($)
 }
 
 // The mean time changes slowly, and measuring costs several gh calls: far less often than the PR state.
@@ -295,9 +332,7 @@ async function gh<T>($: EngineInterface, args: string[]): Promise<T | undefined>
   return r.exitCode === 0 ? (JSON.parse(r.stdout) as T) : undefined
 }
 
-async function measureProject($: EngineInterface): Promise<ProjectCiTime | undefined> {
-  const repo = await gh<{ nameWithOwner: string }>($, ['repo', 'view', '--json', 'nameWithOwner'])
-  if (!repo) return undefined
+async function measureProject($: EngineInterface, project: string): Promise<ProjectCiTime | undefined> {
   const runs = await gh<Run[]>($, ['run', 'list', '--status', 'completed', '--limit', String(MEASURED_RUNS), '--json', 'databaseId,workflowName,startedAt,updatedAt,conclusion,attempt'])
   const main = runs && mainWorkflow(runs)
   if (!runs || !main) return undefined
@@ -307,13 +342,16 @@ async function measureProject($: EngineInterface): Promise<ProjectCiTime | undef
     const run = await gh<{ jobs: Job[] }>($, ['run', 'view', String(r.databaseId), '--json', 'jobs'])
     if (run) detailed.push({ startedAt: r.startedAt, jobs: run.jobs })
   }
-  return measure(repo.nameWithOwner, runs, detailed, Date.now())
+  return measure(project, runs, detailed, await $.clock.now())
 }
 
 async function refreshTimes($: EngineInterface): Promise<void> {
   const kept = ((await $.store.get(TIMES_KEY)) as ProjectCiTime[] | undefined) ?? []
   await update($, ciTimes, () => kept)
-  const fresh = await measureProject($)
+  const repo = await gh<{ nameWithOwner: string }>($, ['repo', 'view', '--json', 'nameWithOwner'])
+  await update($, ciProject, () => repo?.nameWithOwner ?? null)
+  if (!repo || !needsMeasuring(kept, repo.nameWithOwner, await $.clock.now(), TIMES_PERIOD_MS)) return
+  const fresh = await measureProject($, repo.nameWithOwner)
   if (!fresh) return
   const list = remember(kept, fresh)
   await $.store.set(TIMES_KEY, list)
@@ -332,13 +370,16 @@ async function checksText($: EngineInterface): Promise<string> {
   }
 }
 
-async function startCi($: EngineInterface): Promise<void> {
+async function startCi($: EngineInterface, isInteractive: boolean): Promise<void> {
   await $.command.register({ name: 'concordia-ci', description: 'The CI of the current branch pull request, check by check.' })
+  if (!isInteractive) return
   // On timers: gh takes seconds, and session.start holds the first prompt.
-  $.clock.after(1, safely(() => refreshCi($)))
-  $.clock.every(CI_PERIOD_MS, safely(() => refreshCi($)))
-  $.clock.after(1, safely(() => refreshTimes($)))
-  $.clock.every(TIMES_PERIOD_MS, safely(() => refreshTimes($)))
+  const pollCi = exclusive(safely(() => refreshCiIfDue($)))
+  const pollTimes = exclusive(safely(() => refreshTimes($)))
+  $.clock.after(1, pollCi)
+  $.clock.every(CI_PERIOD_MS, pollCi)
+  $.clock.after(1, pollTimes)
+  $.clock.every(TIMES_PERIOD_MS, pollTimes)
 }
 
 function registerCi(on: On): void {
@@ -363,13 +404,13 @@ async function publish($: EngineInterface, list: readonly PromptRecord[]): Promi
   await update($, tokensSummary, () => summarizeTokens(list))
 }
 
-async function startTokens($: EngineInterface): Promise<void> {
+async function startTokens($: EngineInterface, isInteractive: boolean): Promise<void> {
   await $.command.register({
     name: 'concordia-tokens',
     description: 'The tokens of the last 20 prompts, the mean and what to change to spend less (clear resets it).',
     argumentHint: '[clear]',
   })
-  $.clock.after(1, safely(async () => publish($, await history($))))
+  if (isInteractive) $.clock.after(1, safely(async () => publish($, await history($))))
 }
 
 function registerTokens(on: On): void {
@@ -409,7 +450,7 @@ function registerTokens(on: On): void {
     if (e.turnId !== open.turnId) return end
     const partial = open.partial
     if (e.usage) add(partial, e.usage)
-    const record: PromptRecord = { ...partial, at: new Date().toISOString(), prompt: open.prompt, durationMs: e.durationMs }
+    const record: PromptRecord = { ...partial, at: new Date().toISOString(), prompt: promptExcerpt(open.prompt), durationMs: e.durationMs }
     open = undefined
     if (total(record) === 0) return end
 
@@ -452,15 +493,16 @@ async function autoOpen($: EngineInterface): Promise<void> {
   $.ui.toast('The Concordia panel needs a wider terminal. Type /concordia-panel to open it now.')
 }
 
-async function startPane($: EngineInterface): Promise<void> {
+async function startPane($: EngineInterface, isInteractive: boolean): Promise<void> {
   await $.command.register({ name: 'concordia-panel', description: 'Open the Concordia panel: agents, pull request CI and tokens per prompt.' })
   // On a timer: nothing here may hold the first prompt.
-  $.clock.after(1, safely(() => autoOpen($)))
+  if (isInteractive) $.clock.after(1, safely(() => autoOpen($)))
 }
 
 function registerPane(on: On): void {
   on('command.run', { command: 'concordia-panel' }, async $ => {
     await $.store.delete(CLOSED_KEY)
+    await safely(() => refreshAgents($))()
     await $.ui.open({ id: PANE, title: TITLE })
     return { text: 'Concordia panel opened.' }
   })
@@ -478,7 +520,7 @@ function registerPane(on: On): void {
     const cards = [
       // First: it is what changes while agents work.
       agentsCard(await read($, agents), Date.now()),
-      ciCard(await read($, ciState), await read($, ciCheckedAt), await read($, ciTimes), await read($, ciProblem)),
+      ciCard(await read($, ciState), await read($, ciCheckedAt), await read($, ciTimes), await read($, ciProblem), await read($, ciProject)),
       tokensCard(await read($, tokensSummary)),
     ]
 
@@ -539,11 +581,12 @@ export const register: Register = on => {
   registerTokens(on)
 
   // The engine takes one unmatched session.start per module. One feature failing here must not take the others down.
+  // A headless run (the benchmark's claude -p) gets the commands, and no timers, gh calls or panel.
   on('session.start', async ($, e, next) => {
-    await safely(() => startPane($))()
-    await safely(() => startAgents($))()
-    await safely(() => startCi($))()
-    await safely(() => startTokens($))()
+    await safely(() => startPane($, e.isInteractive))()
+    await safely(() => startAgents($, e.isInteractive))()
+    await safely(() => startCi($, e.isInteractive))()
+    await safely(() => startTokens($, e.isInteractive))()
     return next(e)
   })
 }

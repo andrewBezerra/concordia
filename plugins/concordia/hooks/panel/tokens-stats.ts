@@ -23,6 +23,9 @@ export type PromptRecord = {
 
 export const WINDOW = 20
 
+/** All that is kept of a prompt's text, which may hold anything the person typed. */
+export const promptExcerpt = (prompt: string) => prompt.replace(/\s+/g, ' ').trim().slice(0, 40)
+
 // The weight of each kind of token in the price, against uncached input: cache read at 10%, written (1 hour cache) at
 // 200%, output at 500%. An approximation of the price tables, to compare prompts with each other.
 const WEIGHT = { input: 1, cacheRead: 0.1, cacheWritten: 2, output: 5 }

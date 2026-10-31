@@ -66,6 +66,8 @@ before making tests red, or finish the step first.
 A pane with three cards, updating by itself: **Agents**, **Pull request CI** and **Tokens per prompt**. It needs
 Claude Code 2.1.287 or later, and works with or without a `concordia.json`. The status line shows CI and tokens together.
 
+Headless runs (`claude -p`) get the commands only: no timers, no `gh` calls, no panel.
+
 It opens by itself when a session starts, on a timer, so it never delays the first prompt. Claude Code only places a pane
 nobody asked for from 144 terminal columns (110 once you have opened it yourself). Below that you get one short toast per
 session saying to type `/concordia-panel`. Close the pane and it stays closed in later sessions, on every project,
@@ -75,16 +77,19 @@ Those commands use a `concordia-` prefix rather than `/concordia:panel`: a comma
 letters, digits, `_` and `-` in its name.
 
 **CI.** The card follows the current branch's pull request through the GitHub CLI, with a link to each failed job and then
-to the checks page, plus the mean CI time of each project and tips drawn only from the numbers of its runs. A toast says
-when a running CI ends. `gh` is optional: without it, outside a repository, with no GitHub remote or when it is not
+to the checks page, plus the mean CI time of the current repository and tips drawn only from the numbers of its runs, and
+the means of up to 3 other projects. A toast says when a running CI ends. It asks `gh` every 30 s, and every 5 minutes once
+CI has finished or `gh` fails, keeping the last state on screen through a failure. `gh` is optional: without it, outside a repository, with no GitHub remote or when it is not
 logged in, the card says what is missing and everything else keeps working.
 
 **Tokens.** Each prompt is counted with the subagents it opened. The weights compare prompts with each other; they are an
-approximation of the price tables, not a bill. The history is kept across sessions and projects.
+approximation of the price tables, not a bill. The history is kept across sessions and projects, in Claude Code's plugin store. Of each prompt's text, only the first 40
+characters are stored, whitespace collapsed; those can still hold whatever you typed. `/concordia-tokens clear` deletes it.
 
 **Agent progress.** The panel shows each subagent's status, model and time. A percentage appears only if the agent writes
 one: **the panel never invents progress**, from the status or the elapsed time or anything else. To report progress, have
-the agent write this file, and rewrite it after each finished item:
+the agent write this file, and rewrite it after each finished item. A file older than the agent is ignored, as another
+run's, and so is any file when the panel did not see the agent start:
 
 ```text
 ~/.claude/concordia/agent-progress/<slug>.json
