@@ -163,8 +163,8 @@ public class ReviewMergeTests
     [Fact]
     public void Escalations_are_collected_once_per_lens()
     {
-        var one = """{ "lens": "general", "findings": [], "escalate": [ { "lens": "performance", "reason": "Loads all orders" } ] }""";
-        var two = """{ "lens": "domain", "findings": [], "escalate": [ { "lens": "performance", "reason": "N+1" } ] }""";
+        var one = """{ "lens": "general", "verdict": "approve", "findings": [], "escalate": [ { "lens": "performance", "reason": "Loads all orders" } ] }""";
+        var two = """{ "lens": "domain", "verdict": "approve", "findings": [], "escalate": [ { "lens": "performance", "reason": "N+1" } ] }""";
 
         var result = Merge(one, two);
 
