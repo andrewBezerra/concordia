@@ -56,8 +56,17 @@ otherwise pick the smaller one. Process that is heavier than the task wastes the
 2. Medium: start **one** reviewer subagent with the general lens plus the lenses listed in the JSON.
    Large: one reviewer per listed lens, in parallel (all lenses when `escalateAll` is true).
 3. Pass each reviewer the pack path and its lens name. Reviewers do not edit code.
-4. If a reviewer returns `escalate` entries, run **only** those extra lenses, at most 3 lenses in total.
-5. After fixes, run at most two more review rounds. Then stop and report what is left.
+4. Save each reviewer's answer **verbatim** (do not edit, summarize or fix its JSON) to a file next to the
+   pack, such as `review-<lens>.json`, then run `"<Concordia helper>" review-merge <file>...` with every
+   answer file. It removes duplicates between lenses, keeps the highest severity and confidence, sorts by
+   severity and prints one compact list and a verdict. Do not merge the findings yourself.
+5. Read the verdict:
+   - `approve`: nothing blocking is left; mention the low findings you ignore.
+   - `changes_requested`: fix the findings marked `*` (confidence ≥ 0.7, severity medium or high).
+   - `incomplete`: at least one answer was listed as `INVALID`, so that lens was **not** reviewed. Run that
+     reviewer again (it must answer with the JSON only); never treat it as `approve`.
+6. If the output lists `escalate` entries, run **only** those extra lenses, at most 3 lenses in total, and merge again.
+7. After fixes, run at most two more review rounds. Then stop and report what is left.
 
 ## 4. Rules
 
