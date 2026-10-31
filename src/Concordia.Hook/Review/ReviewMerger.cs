@@ -190,9 +190,21 @@ internal static class ReviewMerger
 
         if (answer is null) return (null, "answer is null");
 
-        for (var i = 0; i < (answer.Findings?.Count ?? 0); i++)
+        // A reviewer that did not state its result did not review: {} must not count as a yes.
+        if (string.IsNullOrWhiteSpace(answer.Lens)) return (null, "lens is missing");
+        if (answer.Verdict is not ("approve" or "changes_requested")) return (null, "verdict must be approve or changes_requested");
+        if (answer.Findings is null) return (null, "findings is missing");
+        if (answer.Verdict == "changes_requested" && answer.Findings.Count == 0) return (null, "changes_requested with no findings");
+
+        for (var i = 0; i < (answer.Escalate?.Count ?? 0); i++)
         {
-            var f = answer.Findings![i];
+            if (answer.Escalate![i] is null) return (null, $"escalate {i + 1} is null");
+        }
+
+        for (var i = 0; i < answer.Findings.Count; i++)
+        {
+            var f = answer.Findings[i];
+            if (f is null) return (null, $"finding {i + 1} is null");
             var problem =
                 string.IsNullOrWhiteSpace(f.File) ? "file is missing"
                 : string.IsNullOrWhiteSpace(f.Title) ? "title is missing"

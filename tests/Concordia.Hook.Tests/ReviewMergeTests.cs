@@ -6,7 +6,7 @@ namespace Concordia.Hook.Tests;
 public class ReviewMergeTests
 {
     private static string Answer(string lens, params string[] findings) =>
-        $$"""{ "lens": "{{lens}}", "verdict": "changes_requested", "findings": [{{string.Join(",", findings)}}], "escalate": [] }""";
+        $$"""{ "lens": "{{lens}}", "verdict": "{{(findings.Length == 0 ? "approve" : "changes_requested")}}", "findings": [{{string.Join(",", findings)}}], "escalate": [] }""";
 
     private static string Finding(string file, int line, string severity, double confidence, string title) =>
         $$"""{ "file": "{{file}}", "line": {{line}}, "severity": "{{severity}}", "confidence": {{confidence.ToString(System.Globalization.CultureInfo.InvariantCulture)}}, "title": "{{title}}", "scenario": "s", "fix": "f" }""";
@@ -86,6 +86,23 @@ public class ReviewMergeTests
         var result = Merge(Answer("general", Finding("src/A.cs", 1, severity, confidence, "t")));
 
         Assert.Equal(expected, result.Verdict);
+    }
+
+    [Theory]
+    [InlineData("{}", "lens is missing")]
+    [InlineData("""{"lens":"general","findings":[]}""", "verdict must be")]
+    [InlineData("""{"lens":"general","verdict":"maybe","findings":[]}""", "verdict must be")]
+    [InlineData("""{"lens":"general","verdict":"approve"}""", "findings is missing")]
+    [InlineData("""{"lens":"general","verdict":"approve","findings":null}""", "findings is missing")]
+    [InlineData("""{"lens":"general","verdict":"changes_requested","findings":[]}""", "changes_requested with no findings")]
+    [InlineData("""{"lens":"general","verdict":"approve","findings":[null]}""", "finding 1 is null")]
+    [InlineData("""{"lens":"general","verdict":"approve","findings":[],"escalate":[null]}""", "escalate 1 is null")]
+    public void An_incomplete_answer_never_approves(string answer, string reason)
+    {
+        var result = Merge(answer);
+
+        Assert.Equal("incomplete", result.Verdict);
+        Assert.Contains(reason, Assert.Single(result.Invalid).Reason);
     }
 
     [Fact]

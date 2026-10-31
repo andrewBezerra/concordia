@@ -27,7 +27,7 @@ internal static class ReviewMergeCommand
         {
             return new ReviewInput(path, File.ReadAllText(path));
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
             return new ReviewInput(path, null);
         }
