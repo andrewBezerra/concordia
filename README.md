@@ -59,6 +59,7 @@ Then, in each repository:
 | Command | What it does |
 | --- | --- |
 | `/concordia:feature <request>` | Triage (small, medium or large), then the matching pipeline: tests, implementation, review |
+| `/concordia:issue <number>` | Read a GitHub issue, extract its acceptance criteria (or propose them and record them on the issue), then run the feature pipeline |
 | `/concordia:fix <bug>` | Reproduce with a failing test, fix the root cause, prove it |
 | `/concordia:init` | Write `concordia.json` for the detected stack and check the commands |
 | `/concordia-panel` | Open the panel, and undo having closed it |
@@ -145,7 +146,7 @@ Components:
 
 | Piece | Kind | Role |
 | --- | --- | --- |
-| `feature`, `fix`, `init` | Skills | Orchestration playbooks |
+| `feature`, `fix`, `init`, `issue` | Skills | Orchestration playbooks |
 | `planner`, `test-author`, `reviewer` | Subagents | Plan, write failing tests, review one lens |
 | `concordia-hook` | Native binary | Hooks, review pack, gate control |
 | `hooks/panel` | Mod (TypeScript, run by Claude Code) | The panel, its commands and the status line |

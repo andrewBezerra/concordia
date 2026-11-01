@@ -20,6 +20,7 @@ internal static class Cli
                 "session-start" => SessionStartCommand.Run(HookInput.Read(stdin), stdout),
                 "review-pack" => ReviewPackCommand.Run(rest, Directory.GetCurrentDirectory(), stdout, stderr),
                 "review-merge" => ReviewMergeCommand.Run(rest, stdout, stderr),
+                "issue-criteria" => IssueCriteriaCommand.Run(rest, stdin, stdout, stderr),
                 "gate" => GateCommand.Run(rest, Directory.GetCurrentDirectory(), !Console.IsInputRedirected, stdout, stderr),
                 "init" => InitCommand.Run(rest, Directory.GetCurrentDirectory(), stdout, stderr),
                 "version" or "--version" => PrintVersion(stdout),
@@ -60,6 +61,8 @@ internal static class Cli
                               Write a compact review package and pick review lenses
               review-merge <file>...
                               Merge the reviewers' JSON answers: dedupe, sort, verdict
+              issue-criteria [<file>|-]
+                              Extract the acceptance criteria from the JSON of 'gh issue view'
               gate status|on|off [reason]
                               Inspect or toggle the verification gate for this repository
               gate accept-test-removal

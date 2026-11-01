@@ -54,6 +54,8 @@ internal sealed class HookOutput
 [JsonSerializable(typeof(GateState))]
 [JsonSerializable(typeof(ReviewPackSummary))]
 [JsonSerializable(typeof(ReviewerAnswer))]
+[JsonSerializable(typeof(IssueDocument))]
+[JsonSerializable(typeof(IssueCriteriaResult))]
 internal partial class ConcordiaJson : JsonSerializerContext
 {
 }
