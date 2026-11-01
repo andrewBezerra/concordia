@@ -19,6 +19,7 @@ internal static class Cli
                 "stop" => StopCommand.Run(HookInput.Read(stdin), stdout, stderr),
                 "session-start" => SessionStartCommand.Run(HookInput.Read(stdin), stdout),
                 "review-pack" => ReviewPackCommand.Run(rest, Directory.GetCurrentDirectory(), stdout, stderr),
+                "review-merge" => ReviewMergeCommand.Run(rest, stdout, stderr),
                 "gate" => GateCommand.Run(rest, Directory.GetCurrentDirectory(), !Console.IsInputRedirected, stdout, stderr),
                 "init" => InitCommand.Run(rest, Directory.GetCurrentDirectory(), stdout, stderr),
                 "version" or "--version" => PrintVersion(stdout),
@@ -57,6 +58,8 @@ internal static class Cli
             Helper commands:
               review-pack [--base <ref>] [--max-lines <n>]
                               Write a compact review package and pick review lenses
+              review-merge <file>...
+                              Merge the reviewers' JSON answers: dedupe, sort, verdict
               gate status|on|off [reason]
                               Inspect or toggle the verification gate for this repository
               gate accept-test-removal

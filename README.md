@@ -138,6 +138,7 @@ Agent stops  ─▶ stop gate: format edited files → build → test
                           and the next stop verifies again
 Review       ─▶ review-pack: diff + stats into one file, lenses chosen by rules
                   reviewer subagents read the pack and answer in JSON with confidence scores
+                  review-merge: dedupe, sort by severity, verdict (invalid answers never approve)
 ```
 
 Components:
