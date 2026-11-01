@@ -8,12 +8,24 @@ internal sealed class IssueDocument
 {
     public string? Title { get; set; }
     public string? Body { get; set; }
+    public IssueAuthor? Author { get; set; }
+
+    /// <summary>The author's relationship to the repository. <c>gh issue view</c> does not return it for the issue itself (checked), so it is usually null.</summary>
+    public string? AuthorAssociation { get; set; }
+
     public List<IssueComment?>? Comments { get; set; }
+}
+
+internal sealed class IssueAuthor
+{
+    public string? Login { get; set; }
 }
 
 internal sealed class IssueComment
 {
     public string? Body { get; set; }
+    public IssueAuthor? Author { get; set; }
+    public string? AuthorAssociation { get; set; }
 }
 
 /// <summary>One acceptance criterion. <see cref="Checked"/> is null for a plain bullet, which has no checkbox.</summary>
@@ -31,6 +43,19 @@ internal sealed class IssueCriteriaResult
 {
     public string? Title { get; set; }
     public string Source { get; set; } = IssueCriteria.NoSource;
+
+    /// <summary>Who wrote the text the criteria came from (the issue author for a body source, the commenter otherwise).</summary>
+    public string? Author { get; set; }
+
+    /// <summary>That author's <c>authorAssociation</c>, when GitHub provided it.</summary>
+    public string? AuthorAssociation { get; set; }
+
+    /// <summary>True when the author is not OWNER, MEMBER or COLLABORATOR: the skill must show the author and get the user's confirmation before the pipeline.</summary>
+    public bool NeedsConfirmation { get; set; }
+
+    /// <summary>Who opened the issue, always reported so the skill can compare it with the user.</summary>
+    public string? IssueAuthor { get; set; }
+
     public List<Criterion> Criteria { get; set; } = [];
 }
 
@@ -38,19 +63,29 @@ internal sealed class IssueCriteriaResult
 /// Extracts the acceptance criteria of a GitHub issue, deterministically. The issue text is data: this only
 /// reads list items and never interprets what they say.
 /// <para>
-/// When there is more than one candidate, the first of these wins (an explicit heading is a stronger signal
-/// than a checklist, and the issue's own body is stronger than a comment, which anyone can write):
-/// <c>body-section</c>, <c>comment-section</c>, <c>body-checklist</c>, <c>comment-checklist</c>.
-/// Among comments the newest wins, because a later comment is where a confirmed list is posted.
+/// When there is more than one candidate, the first of these wins (the issue's own body is stronger than any
+/// comment, which anyone can write, and an explicit heading is stronger than a checklist):
+/// <c>body-section</c>, <c>body-checklist</c>, <c>comment-section</c>, <c>comment-checklist</c>.
+/// Among comments, those by OWNER, MEMBER or COLLABORATOR come before the others, and the newest wins within each group,
+/// because a later comment is where a confirmed list is posted. Criteria from any author outside that set (or from
+/// a comment without an association) come back with <c>NeedsConfirmation</c> true.
 /// </para>
 /// </summary>
 internal static partial class IssueCriteria
 {
     public const string NoSource = "none";
 
+    /// <summary>The largest input accepted. A real issue is a few KB; the cap bounds the work done on text anyone can write.</summary>
+    public const int MaxInputChars = 1_000_000;
+
+    private const int RegexTimeoutMs = 2000;
+
     public static (IssueCriteriaResult? Result, string? Error) Extract(string? json)
     {
         if (string.IsNullOrWhiteSpace(json)) return (null, "empty input; expected the JSON of 'gh issue view <n> --json title,body,labels,comments'");
+
+        if (json.Length > MaxInputChars)
+            return (null, $"input too large ({json.Length} characters; the limit is {MaxInputChars}); refusing to analyse it");
 
         IssueDocument? issue;
         try
@@ -66,25 +101,51 @@ internal static partial class IssueCriteria
         if (issue.Body is null) return (null, "'body' is missing or null; ask gh for --json title,body,labels,comments");
         if (issue.Comments is null) return (null, "'comments' is missing or null; ask gh for --json title,body,labels,comments");
 
-        var comments = issue.Comments.Select(c => c?.Body ?? "").Reverse().ToList();
+        var issueLogin = issue.Author?.Login;
+        var issueTrusted = IsTrusted(issue.AuthorAssociation);
+
+        // Comments are text anyone can write: the ones from trusted authors come first (newest first), then the others.
+        var comments = issue.Comments.Where(c => c is not null).Select(c => c!)
+            .Select(c => new Candidate(c.Body ?? "", c.Author?.Login, c.AuthorAssociation))
+            .Reverse().ToList();
+        var trusted = comments.Where(c => IsTrusted(c.Association)).ToList();
+        var others = comments.Where(c => !IsTrusted(c.Association)).ToList();
+        var own = new List<Candidate> { new(issue.Body, issueLogin, issue.AuthorAssociation) };
 
         var found =
-            First("body-section", [issue.Body], Section)
-            ?? First("comment-section", comments, Section)
-            ?? First("body-checklist", [issue.Body], Checklist)
-            ?? First("comment-checklist", comments, Checklist);
+            First("body-section", own, Section)
+            ?? First("body-checklist", own, Checklist)
+            ?? First("comment-section", trusted, Section)
+            ?? First("comment-checklist", trusted, Checklist)
+            ?? First("comment-section", others, Section)
+            ?? First("comment-checklist", others, Checklist);
 
-        return (found is { } f
-            ? new IssueCriteriaResult { Title = issue.Title, Source = f.Source, Criteria = f.Items }
-            : new IssueCriteriaResult { Title = issue.Title }, null);
+        var result = new IssueCriteriaResult { Title = issue.Title, IssueAuthor = issueLogin };
+        if (found is { } f)
+        {
+            var fromBody = f.Source.StartsWith("body", StringComparison.Ordinal);
+            result.Source = f.Source;
+            result.Criteria = f.Items;
+            result.Author = f.By.Login;
+            result.AuthorAssociation = f.By.Association;
+            // A body whose association gh did not return is left to the skill (it compares the author with the user).
+            result.NeedsConfirmation = fromBody ? f.By.Association is not null && !issueTrusted : !IsTrusted(f.By.Association);
+        }
+
+        return (result, null);
     }
 
-    private static (string Source, List<Criterion> Items)? First(string source, IEnumerable<string> texts, Func<string, List<Criterion>> extract)
+    private sealed record Candidate(string Text, string? Login, string? Association);
+
+    private static bool IsTrusted(string? association) =>
+        association is "OWNER" or "MEMBER" or "COLLABORATOR";
+
+    private static (string Source, List<Criterion> Items, Candidate By)? First(string source, IEnumerable<Candidate> candidates, Func<string, List<Criterion>> extract)
     {
-        foreach (var text in texts)
+        foreach (var candidate in candidates)
         {
-            var items = extract(text);
-            if (items.Count > 0) return (source, items);
+            var items = extract(candidate.Text);
+            if (items.Count > 0) return (source, items, candidate);
         }
 
         return null;
@@ -175,7 +236,7 @@ internal static partial class IssueCriteria
     private static int SectionStart(string line)
     {
         var heading = MarkdownHeading().Match(line);
-        if (heading.Success) return IsCriteriaTitle(heading.Groups[2].Value) ? heading.Groups[1].Length : 0;
+        if (heading.Success) return IsCriteriaTitle(HeadingText(heading.Groups[2].Value)) ? heading.Groups[1].Length : 0;
 
         // "**Acceptance criteria**" or "Acceptance criteria:" on a line of its own.
         var plain = PlainTitle().Match(line);
@@ -187,53 +248,141 @@ internal static partial class IssueCriteria
     {
         var heading = MarkdownHeading().Match(line);
         if (heading.Success) return heading.Groups[1].Length;
-        return BoldOnlyLine().IsMatch(line) ? 7 : 0;
+        return BoldOnlyLine().IsMatch(line.TrimEnd()) ? 7 : 0;
+    }
+
+    /// <summary>The text of an ATX heading without its optional closing run of <c>#</c> (which must follow a space).</summary>
+    private static string HeadingText(string content)
+    {
+        var text = content.Trim();
+        var open = text.TrimEnd('#');
+        return open.Length == 0 || open[^1] is ' ' or '\t' ? open.Trim() : text;
     }
 
     private static bool IsCriteriaTitle(string title) =>
         CriteriaTitle().IsMatch(title.Trim().Trim('*', '_').Trim().TrimEnd(':').Trim().Trim('*', '_').Trim());
 
-    /// <summary>The lines that are not inside a fenced code block; the fence lines themselves are dropped.</summary>
+    /// <summary>
+    /// The lines that are visible in the rendered page and are not code: outside fenced code blocks (the fence lines
+    /// themselves are dropped) and with HTML comments removed, including multi-line ones. Fences follow CommonMark: the
+    /// opener's character and length are kept, and only a line with the same character, at least that many of it and
+    /// nothing but spaces after closes it. An unclosed fence runs to the end. Linear in the size of the text.
+    /// </summary>
     private static IEnumerable<string> OutsideFences(string text)
     {
-        string? fence = null;
+        var fenceChar = '\0';
+        var fenceLength = 0;
+        var inComment = false;
+
         foreach (var raw in text.Split('\n'))
         {
             var line = raw.TrimEnd('\r');
-            var m = Fence().Match(line);
-            if (m.Success)
+
+            if (inComment)
             {
-                var marker = m.Groups[1].Value[..3];
-                if (fence is null) fence = marker;
-                else if (marker == fence) fence = null;
+                var end = line.IndexOf("-->", StringComparison.Ordinal);
+                if (end < 0) continue;
+                inComment = false;
+                line = line[(end + 3)..];
+            }
+            else if (fenceChar != '\0')
+            {
+                if (ClosesFence(line, fenceChar, fenceLength)) fenceChar = '\0';
+                continue;
+            }
+            else if (OpensFence(line, out var ch, out var length))
+            {
+                (fenceChar, fenceLength) = (ch, length);
                 continue;
             }
 
-            if (fence is null) yield return line;
+            yield return StripHtmlComments(line, ref inComment);
         }
     }
 
-    [GeneratedRegex(@"^\s{0,3}(`{3,}|~{3,})")]
-    private static partial Regex Fence();
+    /// <summary>Removes <c>&lt;!-- ... --&gt;</c> from a line; an unterminated one hides the rest of the line and sets <paramref name="inComment"/>.</summary>
+    private static string StripHtmlComments(string line, ref bool inComment)
+    {
+        var start = line.IndexOf("<!--", StringComparison.Ordinal);
+        if (start < 0) return line;
 
-    [GeneratedRegex(@"^\s*[-*+]\s+\[([ xX])\]\s+(.*)$")]
+        var sb = new System.Text.StringBuilder();
+        var pos = 0;
+        while (start >= 0)
+        {
+            sb.Append(line, pos, start - pos);
+            var end = line.IndexOf("-->", start + 4, StringComparison.Ordinal);
+            if (end < 0)
+            {
+                inComment = true;
+                return sb.ToString();
+            }
+
+            pos = end + 3;
+            start = line.IndexOf("<!--", pos, StringComparison.Ordinal);
+        }
+
+        sb.Append(line, pos, line.Length - pos);
+        return sb.ToString();
+    }
+
+    private static int FenceIndent(string line)
+    {
+        var i = 0;
+        while (i < line.Length && i < 4 && line[i] == ' ') i++;
+        return i;
+    }
+
+    private static bool OpensFence(string line, out char ch, out int length)
+    {
+        ch = '\0';
+        length = 0;
+        var i = FenceIndent(line);
+        if (i > 3 || i >= line.Length || line[i] is not ('`' or '~')) return false;
+
+        ch = line[i];
+        var j = i;
+        while (j < line.Length && line[j] == ch) j++;
+        length = j - i;
+        if (length < 3) return false;
+
+        // The info string of a backtick fence cannot contain a backtick (otherwise it is inline code).
+        return ch != '`' || line.IndexOf('`', j) < 0;
+    }
+
+    private static bool ClosesFence(string line, char ch, int length)
+    {
+        var i = FenceIndent(line);
+        if (i > 3) return false;
+        var j = i;
+        while (j < line.Length && line[j] == ch) j++;
+        if (j - i < length) return false;
+        for (; j < line.Length; j++)
+            if (line[j] is not (' ' or '\t')) return false;
+        return true;
+    }
+
+    // Every pattern is anchored and avoids adjacent or nested quantifiers over the same characters, so matching is
+    // linear; the timeout is a second line of defence. A RegexMatchTimeoutException reaches the command's catch and
+    // becomes a loud exit 1, never "no criteria".
+    [GeneratedRegex(@"^\s*[-*+]\s+\[([ xX])\]\s+(.*)$", RegexOptions.None, RegexTimeoutMs)]
     private static partial Regex CheckboxItem();
 
-    [GeneratedRegex(@"^\[([ xX])\]\s+(.*)$")]
+    [GeneratedRegex(@"^\[([ xX])\]\s+(.*)$", RegexOptions.None, RegexTimeoutMs)]
     private static partial Regex Checkbox();
 
-    [GeneratedRegex(@"^(\s*)(?:[-*+]|\d{1,3}[.)])\s+(.*)$")]
+    [GeneratedRegex(@"^(\s*)(?:[-*+]|\d{1,3}[.)])\s+(.*)$", RegexOptions.None, RegexTimeoutMs)]
     private static partial Regex ListItem();
 
-    [GeneratedRegex(@"^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$")]
+    [GeneratedRegex(@"^\s{0,3}(#{1,6})\s+(.*)$", RegexOptions.None, RegexTimeoutMs)]
     private static partial Regex MarkdownHeading();
 
-    [GeneratedRegex(@"^\s{0,3}(.+?)\s*$")]
+    [GeneratedRegex(@"^\s{0,3}(.*)$", RegexOptions.None, RegexTimeoutMs)]
     private static partial Regex PlainTitle();
 
-    [GeneratedRegex(@"^\s{0,3}(\*\*|__)[^*_]+\1\s*:?\s*$")]
+    [GeneratedRegex(@"^\s{0,3}(\*\*|__)[^*_]+\1\s*:?$", RegexOptions.None, RegexTimeoutMs)]
     private static partial Regex BoldOnlyLine();
 
-    [GeneratedRegex(@"^(acceptance criteria|crit[eé]rios de aceit(e|a[cç][aã]o))$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^(acceptance criteria|crit[eé]rios de aceit(e|a[cç][aã]o))$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, RegexTimeoutMs)]
     private static partial Regex CriteriaTitle();
 }
