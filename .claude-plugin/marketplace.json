@@ -1,0 +1,24 @@
+{
+  "name": "concordia",
+  "owner": {
+    "name": "Carlos Andrew Costa Bezerra",
+    "url": "https://github.com/andrewBezerra"
+  },
+  "metadata": {
+    "description": "Agent orchestration for Claude Code that proves what it ships."
+  },
+  "plugins": [
+    {
+      "name": "concordia",
+      "description": "Verification gates enforced by hooks, a process sized to the task, and risk-based review lenses. .NET preset included.",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/andrewBezerra/concordia.git",
+        "path": "plugins/concordia",
+        "ref": "dist"
+      },
+      "category": "development",
+      "keywords": ["orchestration", "verification", "tdd", "code-review", "dotnet"]
+    }
+  ]
+}
