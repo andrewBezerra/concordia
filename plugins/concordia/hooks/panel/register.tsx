@@ -4,7 +4,7 @@ import type { EngineInterface, On, Register } from 'claude-code'
 import type { AgentBirth, AgentProgress, AgentRow, BackgroundSession, CiState, ConversationLine, ProjectCiTime, TokensSummary } from '../../types'
 
 import { agentsCard, bar, ciCard, elapsed, FINISHED, STATUS_NAME, SYMBOL, tokensCard, type Card, type Tone } from './cards'
-import { ciPollIsDue, explainGhFailure, explainGhStartFailure, isFinished, statusLine, summarize, type Check } from './ci-state'
+import { ciPollIsDue, explainGhFailure, explainGhStartFailure, isFinished, statusLine, summarize, type Check, OPEN_PRS_QUERY, parseOpenPrs, type OpenPr } from './ci-state'
 import { mainWorkflow, measure, needsMeasuring, remember, type Job, type Run, type RunWithJobs } from './ci-times'
 import { conversationLines, SCREEN_LINES } from './conversation'
 import { isCurrentProgress, parseProgress, progressFileName } from './progress'
@@ -276,6 +276,7 @@ const ciProblem = atom({ plugin: 'concordia', key: 'ciProblem' } as const, null 
 const ciCheckedAt = atom({ plugin: 'concordia', key: 'ciCheckedAt' } as const, 0)
 const ciTimes = atom({ plugin: 'concordia', key: 'ciTimes' } as const, [] as ProjectCiTime[])
 const ciProject = atom({ plugin: 'concordia', key: 'ciProject' } as const, null as string | null)
+const ciOpenPrs = atom({ plugin: 'concordia', key: 'ciOpenPrs' } as const, [] as OpenPr[])
 
 // The last time gh was asked, answered or not: the backoff counts from it.
 let lastAttemptAt = 0
@@ -319,6 +320,13 @@ async function refreshCi($: EngineInterface): Promise<void> {
 
 async function refreshCiIfDue($: EngineInterface): Promise<void> {
   if (ciPollIsDue(await read($, ciState), await read($, ciProblem), lastAttemptAt, await $.clock.now())) await refreshCi($)
+}
+
+// Every look, with no backoff: a pull request in another repository can open or start running at any moment. A failed
+// look keeps the list, and the branch's own lookup already says what is missing.
+async function refreshOpenPrs($: EngineInterface): Promise<void> {
+  const r = await $.process.run(['gh', 'api', 'graphql', '-f', `query=${OPEN_PRS_QUERY}`], { timeoutMs: 20_000 })
+  if (r.exitCode === 0) await update($, ciOpenPrs, () => parseOpenPrs(r.stdout))
 }
 
 // The mean time changes slowly, and measuring costs several gh calls: far less often than the PR state.
@@ -378,6 +386,9 @@ async function startCi($: EngineInterface, isInteractive: boolean): Promise<void
   const pollTimes = exclusive(safely(() => refreshTimes($)))
   $.clock.after(1, pollCi)
   $.clock.every(CI_PERIOD_MS, pollCi)
+  const pollOpenPrs = exclusive(safely(() => refreshOpenPrs($)))
+  $.clock.after(1, pollOpenPrs)
+  $.clock.every(CI_PERIOD_MS, pollOpenPrs)
   $.clock.after(1, pollTimes)
   $.clock.every(TIMES_PERIOD_MS, pollTimes)
 }
@@ -520,7 +531,7 @@ function registerPane(on: On): void {
     const cards = [
       // First: it is what changes while agents work.
       agentsCard(await read($, agents), Date.now()),
-      ciCard(await read($, ciState), await read($, ciCheckedAt), await read($, ciTimes), await read($, ciProblem), await read($, ciProject)),
+      ciCard(await read($, ciState), await read($, ciCheckedAt), await read($, ciTimes), await read($, ciProblem), await read($, ciProject), await read($, ciOpenPrs)),
       tokensCard(await read($, tokensSummary)),
     ]
 

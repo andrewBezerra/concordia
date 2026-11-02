@@ -98,7 +98,8 @@ Those commands use a `concordia-` prefix rather than `/concordia:panel`: a comma
 letters, digits, `_` and `-` in its name.
 
 **CI.** The card follows the current branch's pull request through the GitHub CLI, with a link to each failed job and then
-to the checks page, plus the mean CI time of the current repository and tips drawn only from the numbers of its runs, and
+to the checks page. Below it come your other open pull requests, in any repository, every 30 s: the five with the latest
+activity and the state of their checks. Then the mean CI time of the current repository and tips drawn only from the numbers of its runs, and
 the means of up to 3 other projects. A toast says when a running CI ends. It asks `gh` every 30 s, and every 5 minutes once
 CI has finished or `gh` fails, keeping the last state on screen through a failure. `gh` is optional: without it, outside a repository, with no GitHub remote or when it is not
 logged in, the card says what is missing and everything else keeps working.

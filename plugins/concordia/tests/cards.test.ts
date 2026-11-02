@@ -76,3 +76,30 @@ describe('the panel cards', () => {
     expect(agentsCard([{ id: 'a3', description: 'Model', status: 'failed' }], at1405).tone).toBe('error')
   })
 })
+
+describe('the open pull requests on the CI card', () => {
+  const at = new Date(2026, 9, 21, 14, 5).getTime()
+  const open = (number: number, ci: 'passed' | 'failed' | 'running' | 'none' = 'running') => ({ repo: 'o/shop', number, title: `T${number}`, url: `https://github.com/o/shop/pull/${number}`, ci })
+
+  test('shows them when the branch has no pull request, without turning the card red', () => {
+    const card = ciCard(null, at, [], null, null, [open(1, 'failed'), open(2, 'passed')])
+    expect(card.tone).toBe('neutral')
+    expect(card.lines.map(l => [l.text, l.tone])).toEqual([
+      ['No open pull request on this branch.', 'neutral'],
+      ['shop #1: failed.', 'error'],
+      ['shop #2: all green.', 'ok'],
+    ])
+    expect(card.lines[1]).toMatchObject({ detail: 'T1', links: [{ href: 'https://github.com/o/shop/pull/1/checks' }] })
+  })
+
+  test("does not repeat the branch's own pull request", () => {
+    const state = { pr: 1, total: 1, passed: 1, running: 0, failures: [], failureLinks: [], url: 'https://github.com/o/shop/pull/1/checks' }
+    expect(ciCard(state, at, [], null, null, [open(1), open(2)]).lines.map(l => l.text)).toEqual(['PR #1: all green (1 check).', 'shop #2: running.'])
+  })
+
+  test('shows five and counts the rest', () => {
+    const lines = ciCard(null, at, [], null, null, [1, 2, 3, 4, 5, 6, 7].map(n => open(n))).lines
+    expect(lines).toHaveLength(7)
+    expect(lines[6]?.text).toBe('And 2 more open pull requests.')
+  })
+})
