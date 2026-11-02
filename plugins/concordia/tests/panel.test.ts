@@ -278,7 +278,7 @@ test('the decisions card follows the file by itself, and a deleted file means no
   on('session.start', () => ({ cwd: '.' }))
   await $.session.start(INTERACTIVE)
   await clock.advance(10)
-  expect(paths).toContain('C:/Users/test/.claude/concordia/pending-decisions.json')
+  expect(paths.some(p => /[\\/]\.claude[\\/]concordia[\\/]pending-decisions\.json$/.test(p))).toBe(true)
 
   const ui = await $.ui.mount({ plugin: 'concordia', surface: 'terminal', ...PANEL })
   expect(await ui.find({ type: 'Text', text: /BLOCKING: Pick one/ })).toBeTruthy()
