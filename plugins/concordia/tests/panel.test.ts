@@ -90,10 +90,10 @@ test('a pane that could not be placed shows one toast, once per session', async 
 })
 
 for (const surface of ['terminal', 'desktop'] as const) {
-  test(`the panel draws its three cards and the new command names on ${surface}`, async ($, on) => {
+  test(`the panel draws its cards and the new command names on ${surface}`, async ($, on) => {
     on('env.get', () => ({ value: undefined }))
     const ui = await $.ui.mount({ plugin: 'concordia', surface, ...PANEL })
-    for (const title of [/Agents/, /Pull request CI/, /Tokens per prompt/, /\/concordia-panel reopens/]) expect(await ui.find({ type: 'Text', text: title })).toBeDefined()
+    for (const title of [/Agents/, /Pending decisions/, /Pull request CI/, /Tokens per prompt/, /\/concordia-panel reopens/]) expect(await ui.find({ type: 'Text', text: title })).toBeDefined()
     await ui.unmount()
   })
 }
@@ -259,4 +259,32 @@ test('a periodic job skips its turn while the last one still runs', async () => 
   expect(runs).toBe(2)
   finish()
   await second
+})
+
+test('the decisions card follows the file by itself, and a deleted file means nothing is pending', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.store(on)
+  let answer: any = { value: JSON.stringify({ decisions: [{ title: 'Pick one', blocks: 'the store' }] }) }
+  const paths: string[] = []
+  on('fs.read', (_$: any, e: any): any => (paths.push(e.path), answer))
+  on('fs.stat', (): any => ({ deny: 'ENOENT' }))
+  on('ui.panes', (): any => ({ value: [] }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.status', () => ({ value: undefined }))
+  on('process.run', (): any => ({ value: { exitCode: 1, stdout: '', stderr: 'no pull requests found' } }))
+  on('agent.list', () => ({ value: [] }))
+  on('env.get', () => ({ value: 'C:/Users/test' }))
+  on('command.register', (_$: any, e: any) => ({ value: { command: e.name } }))
+  on('session.start', () => ({ cwd: '.' }))
+  await $.session.start(INTERACTIVE)
+  await clock.advance(10)
+  expect(paths.some(p => /[\\/]\.claude[\\/]concordia[\\/]pending-decisions\.json$/.test(p))).toBe(true)
+
+  const ui = await $.ui.mount({ plugin: 'concordia', surface: 'terminal', ...PANEL })
+  expect(await ui.find({ type: 'Text', text: /BLOCKING: Pick one/ })).toBeTruthy()
+
+  answer = { deny: 'ENOENT: no such file' }
+  await clock.advance(5_000)
+  expect(await ui.find({ type: 'Text', text: /No pending decisions/ })).toBeTruthy()
+  await ui.unmount()
 })
