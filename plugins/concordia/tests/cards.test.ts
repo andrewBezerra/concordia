@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { agentsCard, ciCard, tokensCard } from '../hooks/panel/cards'
+import { agentsCard, ciCard, decisionsCard, tokensCard } from '../hooks/panel/cards'
+import { isMissingFile, parseDecisions } from '../hooks/panel/decisions'
 
 describe('the panel cards', () => {
   const at1405 = new Date(2026, 9, 21, 14, 5).getTime()
@@ -101,5 +102,39 @@ describe('the open pull requests on the CI card', () => {
     const lines = ciCard(null, at, [], null, null, [1, 2, 3, 4, 5, 6, 7].map(n => open(n))).lines
     expect(lines).toHaveLength(7)
     expect(lines[6]?.text).toBe('And 2 more open pull requests.')
+  })
+})
+
+describe('the pending decisions', () => {
+  const file = (...decisions: object[]) => JSON.stringify({ decisions })
+
+  test('what blocks comes first, then what carries a risk, keeping the order of the file', () => {
+    const titles = parseDecisions(file({ title: 'plain' }, { title: 'risk', risk: 'r' }, { title: 'block', blocks: 'b' }, { title: 'both', blocks: 'b', risk: 'r' }))
+    expect(titles.map(d => d.title)).toEqual(['block', 'both', 'risk', 'plain'])
+  })
+
+  test('drops an entry without a title and a link that is not https', () => {
+    expect(parseDecisions(file({ url: 'https://x.y' }, { title: 'a', url: 'javascript:alert(1)' }))).toEqual([{ title: 'a' }])
+  })
+
+  test('a file in another shape is a failure, and only a missing file means nothing is pending', () => {
+    expect(() => parseDecisions('{}')).toThrow()
+    expect(() => parseDecisions('not json')).toThrow()
+    expect(isMissingFile(new Error('ENOENT: no such file'))).toBe(true)
+    expect(isMissingFile(new Error('EACCES'))).toBe(false)
+  })
+
+  test('the card marks what blocks and what carries a risk, with the facts and the link', () => {
+    const card = decisionsCard(parseDecisions(file({ title: 'plain' }, { title: 'r', risk: 'may leak' }, { title: 'b', blocks: 'the store', risk: 'late', url: 'https://x.y/1' })), null)
+    expect(card.tone).toBe('error')
+    expect(card.lines.map(l => [l.text, l.tone])).toEqual([['BLOCKING + RISK: b', 'error'], ['RISK: r', 'attention'], ['plain', 'neutral']])
+    expect(card.lines[0]).toMatchObject({ detail: 'Blocks: the store · Risk: late', links: [{ href: 'https://x.y/1' }] })
+    expect(card.lines[2]?.detail).toBeUndefined()
+  })
+
+  test('the card with nothing pending, with only risks, and with a problem', () => {
+    expect(decisionsCard([], null)).toMatchObject({ tone: 'ok', lines: [{ text: 'No pending decisions.' }] })
+    expect(decisionsCard([{ title: 'r', risk: 'x' }], null).tone).toBe('attention')
+    expect(decisionsCard([{ title: 'kept' }], 'unreadable').lines[0]?.text).toBe('unreadable')
   })
 })

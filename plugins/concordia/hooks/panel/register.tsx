@@ -3,11 +3,12 @@ import type { EngineInterface, On, Register } from 'claude-code'
 
 import type { AgentBirth, AgentProgress, AgentRow, BackgroundSession, CiState, ConversationLine, ProjectCiTime, TokensSummary } from '../../types'
 
-import { agentsCard, bar, ciCard, elapsed, FINISHED, STATUS_NAME, SYMBOL, tokensCard, type Card, type Tone } from './cards'
+import { agentsCard, bar, ciCard, decisionsCard, elapsed, FINISHED, STATUS_NAME, SYMBOL, tokensCard, type Card, type Tone } from './cards'
 import { ciPollIsDue, explainGhFailure, explainGhStartFailure, isFinished, statusLine, summarize, type Check, OPEN_PRS_QUERY, parseOpenPrs, type OpenPr } from './ci-state'
 import { mainWorkflow, measure, needsMeasuring, remember, type Job, type Run, type RunWithJobs } from './ci-times'
 import { conversationLines, SCREEN_LINES } from './conversation'
 import { isCurrentProgress, parseProgress, progressFileName } from './progress'
+import { isMissingFile, parseDecisions, type Decision } from './decisions'
 import { exclusive, safely } from './safely'
 import { composeStatus } from './status'
 import { add, promptExcerpt, summarizeTokens, tokensReport, tokensStatusLine, total, WINDOW, zero, type PartialRecord, type PromptRecord } from './tokens-stats'
@@ -262,6 +263,34 @@ function registerAgents(on: On): void {
   })
 }
 
+// ---- Pending decisions. The file is kept by whoever works with the person, and the panel only reads it.
+
+const DECISIONS_PERIOD_MS = 5_000
+
+const pendingDecisions = atom({ plugin: 'concordia', key: 'pendingDecisions' } as const, [] as Decision[])
+const decisionsProblem = atom({ plugin: 'concordia', key: 'decisionsProblem' } as const, null as string | null)
+
+async function refreshDecisions($: EngineInterface): Promise<void> {
+  const home = (await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME'))
+  if (!home) return
+  let found: Decision[] = []
+  let problem: string | null = null
+  try {
+    found = parseDecisions(await $.fs.read(`${home}/.claude/concordia/pending-decisions.json`))
+  } catch (error) {
+    if (!isMissingFile(error)) problem = 'pending-decisions.json could not be read: the list on screen may be old.'
+  }
+  // A failed read keeps the last list, and the card says so.
+  await update($, decisionsProblem, () => problem)
+  if (!problem) await update($, pendingDecisions, () => found)
+}
+
+function startDecisions($: EngineInterface): void {
+  const poll = exclusive(safely(() => refreshDecisions($)))
+  $.clock.after(1, poll)
+  $.clock.every(DECISIONS_PERIOD_MS, poll)
+}
+
 // ---- Pull request CI.
 
 // Every 30 s, asks gh for the CI of the current branch's pull request and shows it in the status line. When a running CI
@@ -485,7 +514,7 @@ function registerTokens(on: On): void {
 
 // ---- The panel.
 
-// The panel: one pane with three cards, opened by itself when a session starts, and closed for good once the person
+// The panel: one pane with four cards, opened by itself when a session starts, and closed for good once the person
 // closes it. The explicit command opens it again and forgets that choice.
 const PANE = 'concordia-panel'
 const TITLE = 'Concordia'
@@ -531,6 +560,7 @@ function registerPane(on: On): void {
     const cards = [
       // First: it is what changes while agents work.
       agentsCard(await read($, agents), Date.now()),
+      decisionsCard(await read($, pendingDecisions), await read($, decisionsProblem)),
       ciCard(await read($, ciState), await read($, ciCheckedAt), await read($, ciTimes), await read($, ciProblem), await read($, ciProject), await read($, ciOpenPrs)),
       tokensCard(await read($, tokensSummary)),
     ]
@@ -597,6 +627,7 @@ export const register: Register = on => {
     await safely(() => startPane($, e.isInteractive))()
     await safely(() => startAgents($, e.isInteractive))()
     await safely(() => startCi($, e.isInteractive))()
+    if (e.isInteractive) startDecisions($)
     await safely(() => startTokens($, e.isInteractive))()
     return next(e)
   })

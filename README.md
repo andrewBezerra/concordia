@@ -30,7 +30,7 @@ install besides Claude Code (2.1.287 or later for the panel; `gh` is optional, f
 
 ## What's new in 0.3
 
-- **[The panel](#the-panel)** opens by itself when a session starts, with three cards: Agents, Pull request CI and
+- **[The panel](#the-panel)** opens by itself when a session starts, with four cards: Agents, Pending decisions, Pull request CI and
   Tokens per prompt. Close it and it stays closed until `/concordia-panel`.
 - **Agents:** each subagent's status, model and time, a percentage only when the agent reports one, and a screen with what
   it said and the tools it called.
@@ -84,7 +84,7 @@ before making tests red, or finish the step first.
 
 ## The panel
 
-A pane with three cards, updating by itself: **Agents**, **Pull request CI** and **Tokens per prompt**. It needs
+A pane with four cards, updating by itself: **Agents**, **Pending decisions**, **Pull request CI** and **Tokens per prompt**. It needs
 Claude Code 2.1.287 or later, and works with or without a `concordia.json`. The status line shows CI and tokens together.
 
 Headless runs (`claude -p`) get the commands only: no timers, no `gh` calls, no panel.
@@ -103,6 +103,16 @@ activity and the state of their checks. Then the mean CI time of the current rep
 the means of up to 3 other projects. A toast says when a running CI ends. It asks `gh` every 30 s, and every 5 minutes once
 CI has finished or `gh` fails, keeping the last state on screen through a failure. `gh` is optional: without it, outside a repository, with no GitHub remote or when it is not
 logged in, the card says what is missing and everything else keeps working.
+
+**Pending decisions.** The decisions still to be made, read every 5 s from `~/.claude/concordia/pending-decisions.json`,
+which whoever works with you keeps, across all your projects. What blocks comes first, in red, then what carries a risk,
+in yellow. No file means nothing is pending.
+
+```json
+{ "decisions": [{ "title": "Name the decision", "blocks": "What waits for it", "risk": "What can go wrong", "url": "https://github.com/o/r/issues/1" }] }
+```
+
+Only `title` is required; `url` must be https, and is where the decision is described.
 
 **Tokens.** Each prompt is counted with the subagents it opened. The weights compare prompts with each other; they are an
 approximation of the price tables, not a bill. The history is kept across sessions and projects, in Claude Code's plugin store. Of each prompt's text, only the first 40

@@ -67,6 +67,8 @@ declare module 'claude-code' {
       /** The current repository's nameWithOwner, when gh gave it. */
       ciProject: string | null
       ciOpenPrs: { repo: string; number: number; title: string; url?: string; ci: 'passed' | 'failed' | 'running' | 'none' }[]
+      pendingDecisions: { title: string; blocks?: string; risk?: string; url?: string }[]
+      decisionsProblem: string | null
       tokensSummary: TokensSummary | null
       statusCi: string | null
       statusTokens: string | null

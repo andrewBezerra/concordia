@@ -1,5 +1,6 @@
 import type { AgentRow, CiState, ProjectCiTime, TokensSummary } from '../../types'
 import type { OpenPr } from './ci-state'
+import type { Decision } from './decisions'
 
 // The panel's content without the drawing: one card per feature, with what it does, how it stands now in plain words,
 // and the color of that state.
@@ -111,6 +112,25 @@ function prCard(state: CiState | null, checkedAt: number, problem: string | null
   if (state.running > 0)
     return { ...base, tone: 'attention', lines: [{ tone: 'attention', text: `${pr}: running, ${state.passed} of ${state.total} checks passed.`, detail: when, links }] }
   return { ...base, tone: 'ok', lines: [{ tone: 'ok', text: `${pr}: all green (${plural(state.total, 'check', 'checks')}).`, detail: when, links }] }
+}
+
+/** The decisions card: what blocks in red and what carries a risk in yellow, each with what it blocks, its risk and its link. */
+export function decisionsCard(decisions: readonly Decision[], problem: string | null): Card {
+  const base = { title: 'Pending decisions', role: 'What we still have to decide, with what blocks and what carries a risk.' }
+  if (problem) return { ...base, tone: 'attention', lines: [{ tone: 'attention', text: problem }] }
+  if (decisions.length === 0) return { ...base, tone: 'ok', lines: [{ tone: 'ok', text: 'No pending decisions.' }] }
+  const lines = decisions.map<CardLine>(d => {
+    const facts = [d.blocks && `Blocks: ${d.blocks}`, d.risk && `Risk: ${d.risk}`].filter(Boolean).join(' · ')
+    const marks = [d.blocks && 'BLOCKING', d.risk && 'RISK'].filter(Boolean).join(' + ')
+    return {
+      tone: d.blocks ? 'error' : d.risk ? 'attention' : 'neutral',
+      text: marks ? `${marks}: ${d.title}` : d.title,
+      ...(facts ? { detail: facts } : {}),
+      ...(d.url ? { links: [{ label: 'read the decision ›', href: d.url }] } : {}),
+    }
+  })
+  const tone = decisions.some(d => d.blocks) ? 'error' : decisions.some(d => d.risk) ? 'attention' : 'neutral'
+  return { ...base, tone, lines }
 }
 
 /** A bar of the given cells, full in the given proportion. */
