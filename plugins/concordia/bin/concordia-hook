@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Concordia launcher: runs the native concordia-hook binary built for this OS and CPU.
+# Costs a few milliseconds; the binary does the real work.
+dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+case "$(uname -s)" in
+  Linux*) os=linux ;;
+  Darwin*) os=osx ;;
+  MINGW*|MSYS*|CYGWIN*) os=win ;;
+  *) os=unknown ;;
+esac
+
+case "$(uname -m)" in
+  x86_64|amd64) arch=x64 ;;
+  arm64|aarch64) arch=arm64 ;;
+  *) arch=unknown ;;
+esac
+
+ext=""
+[ "$os" = win ] && ext=".exe"
+exe="$dir/$os-$arch/concordia-hook$ext"
+
+# arm64 macOS and Windows can run x64 binaries through emulation.
+if [ ! -f "$exe" ] && [ "$arch" = arm64 ] && [ "$os" != linux ]; then
+  exe="$dir/$os-x64/concordia-hook$ext"
+fi
+
+if [ ! -f "$exe" ]; then
+  echo "concordia-hook: no binary for $os-$arch; Concordia hooks skipped. Reinstall the plugin or run build/publish-local." >&2
+  exit 0
+fi
+
+exec "$exe" "$@"
