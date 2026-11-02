@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { ciPollIsDue, explainGhFailure, explainGhStartFailure, isFinished, statusLine, summarize } from '../hooks/panel/ci-state'
+import { ciPollIsDue, explainGhFailure, explainGhStartFailure, isFinished, parseOpenPrs, statusLine, summarize } from '../hooks/panel/ci-state'
 import { mainWorkflow, measure, needsMeasuring, remember, type Run, type RunWithJobs } from '../hooks/panel/ci-times'
 
 describe('the CI summary', () => {
@@ -154,4 +154,26 @@ test('a project is measured when missing or older than the period', () => {
   expect(needsMeasuring([t], 'o/r', 1_999, 1_000)).toBe(false)
   expect(needsMeasuring([t], 'o/r', 2_000, 1_000)).toBe(true)
   expect(needsMeasuring([t], 'o/other', 1_001, 1_000)).toBe(true)
+})
+
+describe('the open pull requests', () => {
+  const node = (number: number, state?: string, url = `https://github.com/o/r/pull/${number}`) => ({
+    number,
+    title: `PR ${number}`,
+    url,
+    repository: { nameWithOwner: 'o/r' },
+    commits: { nodes: [{ commit: { statusCheckRollup: state ? { state } : null } }] },
+  })
+  const answer = (...nodes: object[]) => JSON.stringify({ data: { viewer: { pullRequests: { nodes } } } })
+
+  test('reads the state of the checks of each one, keeping the order', () => {
+    const prs = parseOpenPrs(answer(node(1, 'SUCCESS'), node(2, 'FAILURE'), node(3, 'ERROR'), node(4, 'PENDING'), node(5, 'EXPECTED'), node(6)))
+    expect(prs.map(p => [p.number, p.ci])).toEqual([[1, 'passed'], [2, 'failed'], [3, 'failed'], [4, 'running'], [5, 'running'], [6, 'none']])
+    expect(prs[0]).toMatchObject({ repo: 'o/r', title: 'PR 1', url: 'https://github.com/o/r/pull/1' })
+  })
+
+  test('drops a link that is not https, and an empty answer is an empty list', () => {
+    expect(parseOpenPrs(answer(node(1, 'SUCCESS', 'javascript:alert(1)')))[0]?.url).toBeUndefined()
+    expect(parseOpenPrs('{}')).toEqual([])
+  })
 })

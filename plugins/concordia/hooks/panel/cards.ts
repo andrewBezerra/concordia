@@ -1,4 +1,5 @@
 import type { AgentRow, CiState, ProjectCiTime, TokensSummary } from '../../types'
+import type { OpenPr } from './ci-state'
 
 // The panel's content without the drawing: one card per feature, with what it does, how it stands now in plain words,
 // and the color of that state.
@@ -63,14 +64,36 @@ function timeLines(times: readonly ProjectCiTime[], project: string | null): Car
   return [...means, ...tips]
 }
 
-/** The CI card: the branch's PR, whether checks run, passed or failed, the mean time and tips; or what is missing. */
-export function ciCard(state: CiState | null, checkedAt: number, times: readonly ProjectCiTime[] = [], problem: string | null = null, project: string | null = null): Card {
+const SHOWN_OPEN_PRS = 5
+
+const OPEN_PR_CI: Record<OpenPr['ci'], { tone: Tone; text: string }> = {
+  passed: { tone: 'ok', text: 'all green' },
+  failed: { tone: 'error', text: 'failed' },
+  running: { tone: 'attention', text: 'running' },
+  none: { tone: 'neutral', text: 'no checks' },
+}
+
+/** The open pull requests beyond the branch's own, the latest activity first; those that do not fit are only counted. */
+function openPrLines(openPrs: readonly OpenPr[], state: CiState | null): CardLine[] {
+  const others = openPrs.filter(p => !(state?.url && p.url && state.url === `${p.url}/checks`))
+  const lines = others.slice(0, SHOWN_OPEN_PRS).map<CardLine>(p => ({
+    tone: OPEN_PR_CI[p.ci].tone,
+    text: `${projectName(p.repo)} #${p.number}: ${OPEN_PR_CI[p.ci].text}.`,
+    detail: p.title,
+    ...(p.url ? { links: [{ label: 'open the PR checks ›', href: `${p.url}/checks` }] } : {}),
+  }))
+  const hidden = others.length - lines.length
+  return hidden > 0 ? [...lines, { tone: 'neutral', text: `And ${plural(hidden, 'more open pull request', 'more open pull requests')}.` }] : lines
+}
+
+/** The CI card: the branch's PR, whether checks run, passed or failed; the other open PRs; the mean time and tips; or what is missing. */
+export function ciCard(state: CiState | null, checkedAt: number, times: readonly ProjectCiTime[] = [], problem: string | null = null, project: string | null = null, openPrs: readonly OpenPr[] = []): Card {
   const card = prCard(state, checkedAt, problem)
-  return { ...card, lines: [...card.lines, ...timeLines(times, project)] }
+  return { ...card, lines: [...card.lines, ...openPrLines(openPrs, state), ...timeLines(times, project)] }
 }
 
 function prCard(state: CiState | null, checkedAt: number, problem: string | null): Card {
-  const base = { title: 'Pull request CI', role: "Follows the GitHub checks of the current branch's pull request." }
+  const base = { title: 'Pull request CI', role: "Follows the GitHub checks of the current branch's pull request and of your other open ones." }
   const checked = checkedAt > 0 ? `checked at ${clockTime(checkedAt)}` : undefined
   // A state kept through a failed look says so beside its time.
   const when = state && problem ? `${checked} · refresh failed: ${problem}` : checked

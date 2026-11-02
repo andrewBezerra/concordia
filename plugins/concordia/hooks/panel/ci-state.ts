@@ -76,3 +76,35 @@ export function explainGhFailure(stderr: string): string | null {
   const first = stderr.trim().split('\n')[0]?.slice(0, 120)
   return first ? `gh could not read the pull request: ${first}` : 'gh could not read the pull request.'
 }
+
+/** One call for every open pull request of the gh user, in any repository, the latest activity first. */
+export const OPEN_PRS_QUERY =
+  '{viewer{pullRequests(states:OPEN,first:20,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{number title url repository{nameWithOwner} commits(last:1){nodes{commit{statusCheckRollup{state}}}}}}}}'
+
+export type OpenPr = { repo: string; number: number; title: string; url?: string; ci: 'passed' | 'failed' | 'running' | 'none' }
+
+type OpenPrNode = {
+  number: number
+  title: string
+  url?: string
+  repository: { nameWithOwner: string }
+  commits?: { nodes?: { commit?: { statusCheckRollup?: { state?: string } | null } }[] }
+}
+
+function ciOf(rollup: string | undefined): OpenPr['ci'] {
+  if (!rollup) return 'none'
+  if (rollup === 'SUCCESS') return 'passed'
+  return rollup === 'PENDING' || rollup === 'EXPECTED' ? 'running' : 'failed'
+}
+
+/** The pull requests in the answer to `OPEN_PRS_QUERY`. */
+export function parseOpenPrs(stdout: string): OpenPr[] {
+  const answer = JSON.parse(stdout) as { data?: { viewer?: { pullRequests?: { nodes?: OpenPrNode[] } } } }
+  return (answer.data?.viewer?.pullRequests?.nodes ?? []).map(n => ({
+    repo: n.repository.nameWithOwner,
+    number: n.number,
+    title: n.title,
+    ...(n.url && isHttps(n.url) ? { url: n.url } : {}),
+    ci: ciOf(n.commits?.nodes?.[0]?.commit?.statusCheckRollup?.state),
+  }))
+}
