@@ -110,7 +110,7 @@ function prCard(state: CiState | null, checkedAt: number, problem: string | null
     return { ...base, tone: 'error', lines: [{ tone: 'error', text: `${pr}: failed in ${state.failures.join(', ')}.`, detail: when, links: [...failed, ...links] }] }
   }
   if (state.running > 0)
-    return { ...base, tone: 'attention', lines: [{ tone: 'attention', text: `${pr}: running, ${state.passed} of ${state.total} checks passed.`, detail: when, links }] }
+    return { ...base, tone: 'attention', lines: [{ tone: 'attention', text: `${pr}: running, ${bar(state.passed / state.total)} ${state.passed} of ${state.total} checks passed.`, detail: when, links }] }
   return { ...base, tone: 'ok', lines: [{ tone: 'ok', text: `${pr}: all green (${plural(state.total, 'check', 'checks')}).`, detail: when, links }] }
 }
 

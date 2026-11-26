@@ -9,10 +9,19 @@ describe('the panel cards', () => {
 
   test('CI says in words if it is green, running, failed, or if there is no PR', () => {
     expect(ciCard(pr({}), at1405)).toMatchObject({ tone: 'ok', lines: [{ text: 'PR #65: all green (5 checks).', detail: 'checked at 14:05' }] })
-    expect(ciCard(pr({ passed: 3, running: 2 }), at1405).lines[0]?.text).toBe('PR #65: running, 3 of 5 checks passed.')
+    expect(ciCard(pr({ passed: 3, running: 2 }), at1405).lines[0]?.text).toBe('PR #65: running, ██████░░░░ 3 of 5 checks passed.')
     expect(ciCard(pr({ failures: ['Build & test'] }), at1405)).toMatchObject({ tone: 'error' })
     expect(ciCard(null, at1405).lines[0]?.text).toBe('No open pull request on this branch.')
     expect(ciCard(null, 0).lines[0]?.text).toBe('Checking CI…')
+  })
+
+  test('a running PR shows a bar with the passed checks, never above 100% and never counting a failure', () => {
+    expect(ciCard(pr({ passed: 3, running: 2 }), at1405).lines[0]?.text).toBe('PR #65: running, ██████░░░░ 3 of 5 checks passed.')
+    expect(ciCard(pr({ passed: 0, running: 5 }), at1405).lines[0]?.text).toBe('PR #65: running, ░░░░░░░░░░ 0 of 5 checks passed.')
+    // A failure turns the line into the failure, with no bar; the failed check is not counted as done.
+    expect(ciCard(pr({ passed: 3, running: 1, failures: ['Web'] }), at1405).lines[0]?.text).not.toContain('█')
+    expect(ciCard(pr({}), at1405).lines[0]?.text).not.toContain('█')
+    expect(ciCard(pr({ total: 0, passed: 0 }), at1405).lines[0]?.text).not.toContain('░')
   })
 
   test('CI says what is missing when it cannot be read at all', () => {
