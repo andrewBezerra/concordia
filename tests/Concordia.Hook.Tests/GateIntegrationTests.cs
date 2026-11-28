@@ -221,6 +221,39 @@ public class GateIntegrationTests : IDisposable
     }
 
     [Fact]
+    public void ReviewPack_says_what_it_left_out_when_the_diff_is_truncated()
+    {
+        Write("src/A.cs", string.Join("\n", Enumerable.Range(0, 30).Select(i => $"// a{i}")));
+        Write("src/B.cs", string.Join("\n", Enumerable.Range(0, 30).Select(i => $"// b{i}")));
+        var stdout = new StringWriter();
+        var stderr = new StringWriter();
+
+        var code = ReviewPackCommand.Run(["--max-lines", "40"], _root, stdout, stderr);
+
+        Assert.Equal(0, code);
+        Assert.Contains("\"truncated\": true", stdout.ToString());
+        Assert.Contains("src/B.cs", stdout.ToString().Split("omittedFiles")[1]);
+        Assert.Contains("truncated", stderr.ToString(), StringComparison.OrdinalIgnoreCase);
+        var pack = File.ReadAllText(Path.Combine(_root, ".git", "concordia", "review-pack.md"));
+        Assert.Contains("DIFF TRUNCATED", pack);
+        Assert.Contains("src/B.cs", pack.Split("DIFF TRUNCATED")[1]);
+        Assert.DoesNotContain("// b0", pack);
+    }
+
+    [Fact]
+    public void ReviewPack_does_not_warn_when_the_diff_fits()
+    {
+        Write("src/A.cs", "class A {}");
+        var stdout = new StringWriter();
+        var stderr = new StringWriter();
+
+        ReviewPackCommand.Run([], _root, stdout, stderr);
+
+        Assert.Contains("\"truncated\": false", stdout.ToString());
+        Assert.Equal("", stderr.ToString());
+    }
+
+    [Fact]
     public void Stop_ignores_files_already_dirty_at_session_start()
     {
         UseCommands(build: "exit 1", test: "exit 0");

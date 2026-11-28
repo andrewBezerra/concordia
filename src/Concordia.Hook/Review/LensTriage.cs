@@ -63,6 +63,9 @@ internal sealed class ReviewPackSummary
     public bool EscalateAll { get; set; }
     public List<string> EscalationReasons { get; set; } = [];
     public List<LensHit> Lenses { get; set; } = [];
+    public bool Truncated { get; set; }
+    public int OmittedLines { get; set; }
+    public List<string> OmittedFiles { get; set; } = [];
 }
 
 internal sealed class LensHit

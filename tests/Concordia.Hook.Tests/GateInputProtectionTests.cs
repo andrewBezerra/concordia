@@ -144,10 +144,29 @@ public class GateInputProtectionTests : IDisposable
     [InlineData("rm .git/concordia/state.json")]
     [InlineData("rm -r .git\\concordia")]
     [InlineData("rm -rf .git/concordia")]
-    [InlineData("cat .git/worktrees/x/concordia/state.json")]
-    public void A_command_citing_the_state_directory_is_blocked(string command)
+    [InlineData("echo {} > .git/concordia/state.json")]
+    [InlineData("echo {} >>.git/worktrees/x/concordia/state.json")]
+    [InlineData("echo {} > \"$PWD/.git/concordia/state.json\"")]
+    [InlineData("cp x.json .git/concordia/state.json")]
+    [InlineData("mv .git/concordia/state.json /tmp/x")]
+    [InlineData("sed -i s/a/b/ .git/concordia/state.json")]
+    [InlineData("Set-Content .git\\concordia\\state.json '{}'")]
+    [InlineData("python -c \"open('.git/concordia/state.json','w')\"")]
+    [InlineData("tee .git/worktrees/x/concordia/review-general.json")]
+    public void A_command_that_writes_to_the_state_directory_is_blocked(string command)
     {
         Assert.Equal(PreToolCommand.Block, Shell(command).Code);
+    }
+
+    [Theory]
+    [InlineData("cat .git/worktrees/x/concordia/state.json")]
+    [InlineData("head -50 .git/concordia/review-pack.md")]
+    [InlineData("grep -n risk .git/concordia/review-pack.md > /tmp/out.txt")]
+    [InlineData("gh issue create --title t --body \"the pack is in .git/concordia/review-pack.md\"")]
+    [InlineData("Get-Content .git\\concordia\\review-pack.md")]
+    public void A_command_that_only_cites_the_state_directory_is_allowed(string command)
+    {
+        Assert.Equal(0, Shell(command).Code);
     }
 
     [Fact]
