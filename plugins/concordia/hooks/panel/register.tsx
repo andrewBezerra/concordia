@@ -82,13 +82,15 @@ async function refreshAgents($: EngineInterface): Promise<void> {
   for (const a of list) {
     const birth = known[a.id]
     // A finished agent writes nothing more: its last progress stands.
-    const last = shown.find(row => row.id === a.id)?.progress
+    const before = shown.find(row => row.id === a.id)
+    const last = before?.progress
     rows.push({
       id: a.id,
       description: a.description,
       status: a.status,
       model: birth?.model,
       startedAt: birth?.startedAt,
+      endedAt: FINISHED.has(a.status) ? (before?.endedAt ?? Date.now()) : undefined,
       progress: FINISHED.has(a.status) ? last : folder ? await readProgress($, folder, a.description, birth?.startedAt) : undefined,
     })
   }
