@@ -153,6 +153,8 @@ public class GateInputProtectionTests : IDisposable
     [InlineData("Set-Content .git\\concordia\\state.json '{}'")]
     [InlineData("python -c \"open('.git/concordia/state.json','w')\"")]
     [InlineData("tee .git/worktrees/x/concordia/review-general.json")]
+    [InlineData("d=.git/concordia; echo {} > $d/state.json")]
+    [InlineData("grep -n risk .git/concordia/review-pack.md > /tmp/out.txt")]
     public void A_command_that_writes_to_the_state_directory_is_blocked(string command)
     {
         Assert.Equal(PreToolCommand.Block, Shell(command).Code);
@@ -161,7 +163,8 @@ public class GateInputProtectionTests : IDisposable
     [Theory]
     [InlineData("cat .git/worktrees/x/concordia/state.json")]
     [InlineData("head -50 .git/concordia/review-pack.md")]
-    [InlineData("grep -n risk .git/concordia/review-pack.md > /tmp/out.txt")]
+    [InlineData("grep -n risk .git/concordia/review-pack.md 2>&1")]
+    [InlineData("cat .git/concordia/review-pack.md 2>/dev/null")]
     [InlineData("gh issue create --title t --body \"the pack is in .git/concordia/review-pack.md\"")]
     [InlineData("Get-Content .git\\concordia\\review-pack.md")]
     public void A_command_that_only_cites_the_state_directory_is_allowed(string command)

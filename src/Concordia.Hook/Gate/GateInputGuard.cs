@@ -25,6 +25,10 @@ internal static partial class GateInputGuard
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex WriteVerb();
 
+    /// <summary>A &gt; or &gt;&gt; into a file; not 2&gt;&amp;1, not /dev/null, $null or nul, not an arrow (-&gt;, =&gt;).</summary>
+    [GeneratedRegex(@"(?<![-=>])>>?\|?\s*(?![&\s])(?!(?:/dev/null|\$null|nul)(?![\w./-]))", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex FileRedirect();
+
     [GeneratedRegex(@"[\\/]+")]
     private static partial Regex Separators();
 
@@ -103,7 +107,8 @@ internal static partial class GateInputGuard
     }
 
     /// <summary>
-    /// A command that cites the state directory and also writes: it redirects into it, or it uses a verb
+    /// A command that cites the state directory and also writes: it redirects output to a file (anywhere, since
+    /// a variable such as <c>d=.git/concordia; echo {} &gt; $d/state.json</c> hides the target), or it uses a verb
     /// that changes files (or runs an interpreter, which could). A command that only reads or quotes the
     /// path, such as <c>cat</c> or a bug report's text, passes.
     /// </summary>
@@ -122,16 +127,7 @@ internal static partial class GateInputGuard
         }
 
         if (cites.Count == 0) return false;
-        return cites.Any(at => RedirectsInto(normalizedCommand, at)) || WriteVerb().IsMatch(normalizedCommand);
-    }
-
-    /// <summary>True when the path token that starts at or around this index is the target of a &gt; or &gt;&gt;.</summary>
-    private static bool RedirectsInto(string command, int citeIndex)
-    {
-        var i = citeIndex;
-        while (i > 0 && !char.IsWhiteSpace(command[i - 1]) && command[i - 1] is not ('"' or '\'' or '>')) i--;
-        while (i > 0 && (char.IsWhiteSpace(command[i - 1]) || command[i - 1] is '"' or '\'')) i--;
-        return i > 0 && command[i - 1] == '>';
+        return FileRedirect().IsMatch(normalizedCommand) || WriteVerb().IsMatch(normalizedCommand);
     }
 
     private static string Normalize(string value) => Separators().Replace(value, "/");
