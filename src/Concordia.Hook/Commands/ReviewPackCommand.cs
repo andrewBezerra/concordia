@@ -64,7 +64,8 @@ internal static class ReviewPackCommand
 
         Directory.CreateDirectory(repo.StateDir);
         var packPath = Path.Combine(repo.StateDir, "review-pack.md");
-        File.WriteAllText(packPath, Render(baseRef, files, changedLines, projects, triage, diff.StdOut + untrackedDiff, maxLines));
+        var fit = FitDiff(diff.StdOut + untrackedDiff, maxLines);
+        File.WriteAllText(packPath, Render(baseRef, files, changedLines, projects, triage, fit));
 
         var summary = new ReviewPackSummary
         {
@@ -76,12 +77,22 @@ internal static class ReviewPackCommand
             EscalateAll = triage.EscalateAll,
             EscalationReasons = triage.EscalationReasons.ToList(),
             Lenses = triage.Lenses.Select(l => new LensHit { Lens = l.Lens, Reasons = l.Reasons.ToList() }).ToList(),
+            Truncated = fit.Truncated,
+            OmittedLines = fit.OmittedLines,
+            OmittedFiles = fit.OmittedFiles,
         };
+        if (fit.Truncated)
+        {
+            stderr.WriteLine(
+                $"concordia-hook review-pack: diff truncated at {maxLines} lines; {fit.OmittedLines} line(s) in {fit.OmittedFiles.Count} file(s) are not in the pack " +
+                "(listed in the pack and in 'omittedFiles'). Reviewers must read them with git diff, or run again with a larger --max-lines.");
+        }
+
         stdout.WriteLine(JsonSerializer.Serialize(summary, ConcordiaJson.Default.ReviewPackSummary));
         return 0;
     }
 
-    private static string Render(string baseRef, List<string> files, int changedLines, int projects, TriageResult triage, string diff, int maxLines)
+    private static string Render(string baseRef, List<string> files, int changedLines, int projects, TriageResult triage, FittedDiff fit)
     {
         var text = new StringBuilder();
         text.AppendLine("# Concordia review pack").AppendLine();
@@ -97,16 +108,62 @@ internal static class ReviewPackCommand
         text.AppendLine().AppendLine("## Files").AppendLine();
         foreach (var file in files) text.AppendLine($"- {file}");
 
-        var diffLines = diff.Replace("\r\n", "\n").Split('\n');
-        text.AppendLine().AppendLine("## Diff").AppendLine().AppendLine("```diff");
-        foreach (var line in diffLines.Take(maxLines)) text.AppendLine(line);
-        text.AppendLine("```");
-        if (diffLines.Length > maxLines)
+        text.AppendLine().AppendLine("## Diff").AppendLine();
+        if (fit.Truncated)
         {
-            text.AppendLine().AppendLine($"Diff truncated: {diffLines.Length - maxLines} more line(s). Read the files directly for the rest.");
+            text.AppendLine($"> **DIFF TRUNCATED**: {fit.OmittedLines} line(s) are not in this pack. Files cut or left out (read them with `git diff {baseRef} -- <file>`):");
+            foreach (var file in fit.OmittedFiles) text.AppendLine($"> - {file}");
+            text.AppendLine();
         }
 
+        text.AppendLine("```diff");
+        foreach (var line in fit.Lines) text.AppendLine(line);
+        text.AppendLine("```");
         return text.ToString();
+    }
+
+    private sealed record FittedDiff(List<string> Lines, bool Truncated, int OmittedLines, List<string> OmittedFiles);
+
+    /// <summary>Keeps whole files while they fit, so a file is cut in the middle only when it alone is over the limit.</summary>
+    private static FittedDiff FitDiff(string diff, int maxLines)
+    {
+        var lines = diff.Replace("\r\n", "\n").Split('\n').ToList();
+        if (lines.Count > 0 && lines[^1].Length == 0) lines.RemoveAt(lines.Count - 1);
+        if (lines.Count <= maxLines) return new FittedDiff(lines, false, 0, []);
+
+        var starts = new List<int>();
+        for (var i = 0; i < lines.Count; i++)
+        {
+            if (lines[i].StartsWith("diff --git ", StringComparison.Ordinal)) starts.Add(i);
+        }
+
+        if (starts.Count == 0 || starts[0] != 0) starts.Insert(0, 0);
+
+        var kept = 0;
+        foreach (var boundary in starts.Skip(1).Append(lines.Count))
+        {
+            if (boundary > maxLines) break;
+            kept = boundary;
+        }
+
+        if (kept == 0) kept = maxLines;
+
+        var omitted = new List<string>();
+        for (var i = 0; i < starts.Count; i++)
+        {
+            var end = i + 1 < starts.Count ? starts[i + 1] : lines.Count;
+            if (end <= kept) continue;
+            var name = FileOf(lines[starts[i]]);
+            omitted.Add(starts[i] < kept ? $"{name} (cut)" : name);
+        }
+
+        return new FittedDiff(lines.Take(kept).ToList(), true, lines.Count - kept, omitted);
+    }
+
+    private static string FileOf(string diffHeader)
+    {
+        var index = diffHeader.LastIndexOf(" b/", StringComparison.Ordinal);
+        return index >= 0 ? diffHeader[(index + 3)..] : diffHeader;
     }
 
     private static string ProjectOf(string root, string relativeFile)

@@ -18,6 +18,17 @@ internal static partial class GateInputGuard
     [GeneratedRegex(@"[^\s""'`;|&<>()=]*concordia\.json(?![\w.-])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex ConfigToken();
 
+    [GeneratedRegex(
+        @"(?<![\w./-])(?:rm|mv|cp|ln|touch|mkdir|rmdir|chmod|chown|truncate|dd|tee|rsync|xcopy|robocopy|del|sed\s+(?:\S+\s+)*?-\w*i\w*" +
+        @"|Set-Content|Add-Content|Out-File|Clear-Content|Remove-Item|Move-Item|Copy-Item|New-Item|Rename-Item|Set-Item" +
+        @"|python3?|node|perl|ruby|pwsh|powershell|bash|sh|zsh|eval|git\s+(?:checkout|restore|reset|clean|update-ref))(?![\w-])",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex WriteVerb();
+
+    /// <summary>A &gt; or &gt;&gt; into a file; not 2&gt;&amp;1, not /dev/null, $null or nul, not an arrow (-&gt;, =&gt;).</summary>
+    [GeneratedRegex(@"(?<![-=>])>>?\|?\s*(?![&\s])(?!(?:/dev/null|\$null|nul)(?![\w./-]))", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex FileRedirect();
+
     [GeneratedRegex(@"[\\/]+")]
     private static partial Regex Separators();
 
@@ -48,7 +59,7 @@ internal static partial class GateInputGuard
         if (OperatingSystem.IsWindows()) normalized = GitBashDrive().Replace(normalized, "$1:/");
 
         var cwdRepo = Repo.Find(cwd);
-        if (StateDirPath().IsMatch(normalized) || CitesStateDir(normalized, cwdRepo)) return StateMessage();
+        if (WritesToStateDir(normalized, cwdRepo)) return StateMessage();
 
         foreach (Match token in ConfigToken().Matches(normalized))
         {
@@ -95,8 +106,29 @@ internal static partial class GateInputGuard
         return normalizedPath.Equals(stateDir, PathComparison) || normalizedPath.StartsWith(stateDir + "/", PathComparison);
     }
 
-    private static bool CitesStateDir(string normalizedCommand, Repo? repo) =>
-        repo is not null && normalizedCommand.Contains(Normalize(Path.GetFullPath(repo.StateDir)), PathComparison);
+    /// <summary>
+    /// A command that cites the state directory and also writes: it redirects output to a file (anywhere, since
+    /// a variable such as <c>d=.git/concordia; echo {} &gt; $d/state.json</c> hides the target), or it uses a verb
+    /// that changes files (or runs an interpreter, which could). A command that only reads or quotes the
+    /// path, such as <c>cat</c> or a bug report's text, passes.
+    /// </summary>
+    private static bool WritesToStateDir(string normalizedCommand, Repo? repo)
+    {
+        var cites = new List<int>();
+        foreach (Match match in StateDirPath().Matches(normalizedCommand)) cites.Add(match.Index);
+
+        if (repo is not null)
+        {
+            var stateDir = Normalize(Path.GetFullPath(repo.StateDir));
+            for (var at = normalizedCommand.IndexOf(stateDir, PathComparison); at >= 0; at = normalizedCommand.IndexOf(stateDir, at + stateDir.Length, PathComparison))
+            {
+                cites.Add(at);
+            }
+        }
+
+        if (cites.Count == 0) return false;
+        return FileRedirect().IsMatch(normalizedCommand) || WriteVerb().IsMatch(normalizedCommand);
+    }
 
     private static string Normalize(string value) => Separators().Replace(value, "/");
 
@@ -105,6 +137,6 @@ internal static partial class GateInputGuard
         "The agent may not change it. To read it, use the Read tool. If it has to change, tell the user what and why, and ask them to do it.";
 
     private static string StateMessage() =>
-        "Concordia: the verification gate's state directory is off limits to edits and shell commands. " +
-        "To read a file there, such as the review pack, use the Read tool. If the gate is in the way, ask the user.";
+        "Concordia: the verification gate's state directory is off limits to edits and to shell commands that write there. " +
+        "Reading is fine (the Read tool, cat). Save anything of yours, such as a reviewer's answer, in a scratch folder outside it. If the gate is in the way, ask the user.";
 }

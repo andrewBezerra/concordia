@@ -52,12 +52,16 @@ otherwise pick the smaller one. Process that is heavier than the task wastes the
 ## 3. Review (medium and large)
 
 1. Run `"<Concordia helper>" review-pack` (add `--base <ref>` if the work spans commits).
-   It writes the diff and stats to a pack file and prints JSON with the selected lenses.
+   It writes the diff and stats to a pack file and prints JSON with the selected lenses. If the JSON says
+   `"truncated": true`, the pack does not hold the whole diff: `omittedFiles` lists what is missing (a name
+   marked `(cut)` is only partly there). Tell each reviewer to read those with `git diff <base> -- <file>`,
+   or run again with a larger `--max-lines`.
 2. Medium: start **one** reviewer subagent with the general lens plus the lenses listed in the JSON.
    Large: one reviewer per listed lens, in parallel (all lenses when `escalateAll` is true).
 3. Pass each reviewer the pack path and its lens name. Reviewers do not edit code.
-4. Save each reviewer's answer **verbatim** (do not edit, summarize or fix its JSON) to a file next to the
-   pack, such as `review-<lens>.json`, then run `"<Concordia helper>" review-merge <file>...` with every
+4. Save each reviewer's answer **verbatim** (do not edit, summarize or fix its JSON) to a file in a scratch folder
+   **outside** the repository's git directory (the system temp directory, such as `<scratch>/review-<lens>.json`;
+   not next to the pack, because the pre-tool hook keeps the gate's state directory off limits to writes), then run `"<Concordia helper>" review-merge <file>...` with every
    answer file. It removes duplicates between lenses, keeps the highest severity and confidence, sorts by
    severity and prints one compact list and a verdict. Do not merge the findings yourself.
 5. Read the verdict:
