@@ -10,7 +10,7 @@ You orchestrate one change from request to verified result. Concordia's promise 
 deliver is **proven**, not claimed: tests show it works and the verification gate (a Stop hook)
 blocks you from finishing while build or tests are red. Do not try to work around the gate.
 
-The helper CLI path is in the session context as "Concordia helper". Call it with Bash.
+The helper CLI path is in the session context as "Concordia helper". Call it with Bash. If the context has no such entry (the session started outside a git repository, or the context was lost), use `${CLAUDE_PLUGIN_ROOT}/bin/concordia-hook` instead; in PowerShell or cmd on Windows, use `${CLAUDE_PLUGIN_ROOT}/bin/concordia-hook.cmd`. If the variable is empty, look for the newest `concordia-hook` under `~/.claude/plugins/cache/concordia/concordia/*/bin/`.
 
 ## 1. Triage (one line, then move on)
 
