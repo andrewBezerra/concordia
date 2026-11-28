@@ -13,7 +13,12 @@ internal static class SessionStartCommand
     public static int Run(HookInput input, TextWriter stdout)
     {
         var repo = Repo.Find(input.WorkingDirectory);
-        if (repo is null) return 0;
+        if (repo is null)
+        {
+            // A session can start in a folder that holds several repositories: the skills still need the helper.
+            stdout.WriteLine($"Concordia is installed. This folder is not a git repository, so nothing is gated here. Concordia helper: \"{HelperPath()}\".");
+            return 0;
+        }
 
         var settings = ConfigLoader.Load(repo.Root);
         if (settings is null)

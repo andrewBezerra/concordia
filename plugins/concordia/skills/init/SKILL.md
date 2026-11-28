@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # Concordia: init
 
-1. Run `"<Concordia helper>" init` (the path is in the session context as "Concordia helper").
+1. Run `"<Concordia helper>" init` (the path is in the session context as "Concordia helper"). If the context has no such entry (the session started outside a git repository, or the context was lost), use `${CLAUDE_PLUGIN_ROOT}/bin/concordia-hook` instead; in PowerShell or cmd on Windows, use `${CLAUDE_PLUGIN_ROOT}/bin/concordia-hook.cmd`. If the variable is empty, look for the newest `concordia-hook` under `~/.claude/plugins/cache/concordia/concordia/*/bin/`.
    If the helper is not available, tell the user the plugin binaries are missing and stop.
 2. Open the generated `concordia.json` and adapt it to this repository:
    - `commands.build` and `commands.test` must work from the repository root. If there are several

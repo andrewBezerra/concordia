@@ -9,7 +9,7 @@ argument-hint: <bug report, error, or failing behavior>
 A fix is only done when a test that reproduced the bug now passes and nothing else broke.
 The verification gate (a Stop hook) enforces the second part. You make sure of the first.
 
-The helper CLI path is in the session context as "Concordia helper".
+The helper CLI path is in the session context as "Concordia helper". If the context has no such entry (the session started outside a git repository, or the context was lost), use `${CLAUDE_PLUGIN_ROOT}/bin/concordia-hook` instead; in PowerShell or cmd on Windows, use `${CLAUDE_PLUGIN_ROOT}/bin/concordia-hook.cmd`. If the variable is empty, look for the newest `concordia-hook` under `~/.claude/plugins/cache/concordia/concordia/*/bin/`.
 
 1. **Reproduce.** Write the smallest test that fails because of the bug. Run it and confirm it
    fails for the reported reason, not for an unrelated one. If you cannot reproduce it, stop and
