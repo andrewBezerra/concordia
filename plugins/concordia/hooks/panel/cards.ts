@@ -152,19 +152,30 @@ function progressOf(a: AgentRow): string {
   return p.step ? `${line} · ${p.step}` : line
 }
 
+/** How long a failed agent stays on the card after it ended. */
+export const FAILURE_VISIBLE_MS = 10 * 60_000
+
+/** The card lists the agents at work, and the failed ones for a while: they ask for attention. */
+function onCard(a: AgentRow, now: number): boolean {
+  if (!FINISHED.has(a.status)) return true
+  if (a.status === 'completed') return false
+  return a.endedAt === undefined || now - a.endedAt < FAILURE_VISIBLE_MS
+}
+
 /**
- * The agents card: how many finished, and each with its status, model and time; the percentage only when the agent
- * writes its progress file. Without the file, no number: the panel never invents progress.
+ * The agents card: how many finished, then the agents at work (and the recent failures), each with its status, model and
+ * time; the percentage only when the agent writes its progress file. Without the file, no number: the panel never
+ * invents progress. The finished ones are counted, not listed: /concordia-agents has them all.
  */
 export function agentsCard(agents: readonly AgentRow[], now: number): Card {
-  const base = { title: 'Agents', role: 'The subagents of this session, and the progress each one writes.' }
+  const base = { title: 'Agents', role: 'The subagents at work in this session, and the progress each one writes.' }
   if (agents.length === 0) return { ...base, tone: 'neutral', lines: [{ tone: 'neutral', text: 'No subagents in this session.' }] }
   const finished = agents.filter(a => FINISHED.has(a.status)).length
   let tone: Tone = 'attention'
-  if (agents.some(a => agentTone(a.status) === 'error')) tone = 'error'
+  if (agents.some(a => onCard(a, now) && agentTone(a.status) === 'error')) tone = 'error'
   else if (finished === agents.length) tone = 'ok'
   const lines: CardLine[] = [{ tone, text: `${bar(finished / agents.length)} ${finished} of ${agents.length} finished` }]
-  for (const a of agents) {
+  for (const a of agents.filter(x => onCard(x, now))) {
     const model = a.model ? ` (${a.model})` : ''
     const time = a.startedAt ? ` · ${elapsed(now - a.startedAt)}` : ''
     lines.push({ tone: agentTone(a.status), text: `${a.description}${model}: ${STATUS_NAME[a.status] ?? a.status}${time}`, detail: progressOf(a), agentId: a.id })

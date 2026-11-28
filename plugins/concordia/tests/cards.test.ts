@@ -78,12 +78,30 @@ describe('the panel cards', () => {
       ],
       at1405,
     )
-    expect(card.lines[2]?.agentId).toBe('a2')
+    expect(card.lines).toHaveLength(2)
     expect(card.tone).toBe('attention')
     expect(card.lines[0]?.text).toBe('█████░░░░░ 1 of 2 finished')
     expect(card.lines[1]).toMatchObject({ text: 'Engine (opus): working · 3 min 05 s', detail: '████░░░░░░ 38% (34 of 89) · S1192' })
-    expect(card.lines[2]).toMatchObject({ tone: 'ok', text: 'Server: finished', detail: 'no progress file' })
-    expect(agentsCard([{ id: 'a3', description: 'Model', status: 'failed' }], at1405).tone).toBe('error')
+    expect(agentsCard([{ id: 'a3', description: 'Model', status: 'failed', endedAt: at1405 - 60_000 }], at1405).tone).toBe('error')
+  })
+
+  test('agents: finished ones leave the list; failed ones stay for ten minutes after they end', () => {
+    const card = agentsCard(
+      [
+        { id: 'a1', description: 'Done', status: 'completed', endedAt: at1405 - 1_000 },
+        { id: 'a2', description: 'Broke now', status: 'failed', endedAt: at1405 - 9 * 60_000 },
+        { id: 'a3', description: 'Broke long ago', status: 'killed', endedAt: at1405 - 11 * 60_000 },
+        { id: 'a4', description: 'Running', status: 'running' },
+      ],
+      at1405,
+    )
+    expect(card.lines.map(l => l.agentId)).toEqual([undefined, 'a2', 'a4'])
+    expect(card.lines[0]?.text).toBe('████████░░ 3 of 4 finished')
+    const quiet = agentsCard([{ id: 'a5', description: 'Done', status: 'completed', endedAt: at1405 - 1_000 }], at1405)
+    expect(quiet.tone).toBe('ok')
+    expect(quiet.lines).toHaveLength(1)
+    // A failed agent whose end was never seen has no clock to expire it, so it stays visible.
+    expect(agentsCard([{ id: 'a6', description: 'x', status: 'failed' }], at1405).lines).toHaveLength(2)
   })
 })
 

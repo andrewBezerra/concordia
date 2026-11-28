@@ -32,8 +32,9 @@ install besides Claude Code (2.1.287 or later for the panel; `gh` is optional, f
 
 - **[The panel](#the-panel)** opens by itself when a session starts, with four cards: Agents, Pending decisions, Pull request CI and
   Tokens per prompt. Close it and it stays closed until `/concordia-panel`.
-- **Agents:** each subagent's status, model and time, a percentage only when the agent reports one, and a screen with what
-  it said and the tools it called.
+- **Agents:** the count of finished subagents, then each one at work with its status, model and time, a percentage only when
+  the agent reports one (failures stay for 10 minutes); `/concordia-agents` lists them all, and a screen shows what
+  one said and the tools it called.
 - **Pull request CI:** the checks of the current branch, links to each failed job and to the checks page, the mean CI time
   per project, and tips drawn from the numbers of its runs.
 - **Tokens per prompt:** the last prompt against the mean of the last 20, and what to change to spend less.

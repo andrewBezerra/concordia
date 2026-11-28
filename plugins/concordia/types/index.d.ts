@@ -13,6 +13,8 @@ export type AgentRow = {
   status: string
   model?: string
   startedAt?: number
+  /** When the panel first saw the agent finished; the list cannot tell. */
+  endedAt?: number
   progress?: AgentProgress
 }
 
